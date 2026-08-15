@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
 
-# 📌 Kanal ID raqamingizni shu yerga yozing:
+# 📌 Kanal ID raqamingiz:
 CHANNEL_ID = "-1003932364635" 
 
 def load_data(filename, default):
@@ -162,7 +162,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "🎬 Kino boshqaruvi":
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Kino qo'shish", callback_data="add_movie")],
-                [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie")],
+                [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie_menu")],
                 [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
             ])
             await update.message.reply_text("🎬 Kino boshqaruvi:", reply_markup=keyboard)
@@ -249,7 +249,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             caption_text = f"🎬 {movie_name}\n📌 Kod: {new_code}"
             
-            # Kanalga faqat tizer (rasm yoki video) yuborish (Asosiy kino bormaydi)
             if CHANNEL_ID and CHANNEL_ID != "-100xxxxxxxxx":
                 try:
                     if update.message.photo:
@@ -335,17 +334,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
             if found:
                 await update.message.reply_video(video=found["file_id"], caption=f"🎬 {found['title']}\n📌 Kod: {found['code']}")
-            else:
-                await update.message.reply_text(bot_texts["not_found"])
-            return
-
-        elif state == "waiting_for_delete_code":
-            context.user_data["state"] = None
-            initial_len = len(catalog)
-            catalog[:] = [item for item in catalog if str(item.get("code")).strip() != text.strip()]
-            if len(catalog) < initial_len:
-                save_data("catalog.json", catalog)
-                await update.message.reply_text("🗑 Kino muvaffaqiyatli o'chirildi!")
             else:
                 await update.message.reply_text(bot_texts["not_found"])
             return
@@ -496,9 +484,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["state"] = "waiting_for_movie_file"
         await query.message.edit_text("🎬 Avval kinoni to'liq formatda yuboring:")
 
-    elif data == "del_movie":
-        context.user_data["state"] = "waiting_for_delete_code"
-        await query.message.edit_text("🗑 O'chirish uchun kino kodini kiriting:")
+    elif data == "del_movie_menu":
+        if not catalog:
+            await query.message.edit_text("❌ Hozircha kinolar mavjud emas.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+            return
+        
+        keyboard = []
+        for item in catalog:
+            c_code = item.get("code")
+            c_title = item.get("title")
+            keyboard.append([InlineKeyboardButton(f"🗑 {c_code} - {c_title}", callback_data=f"del_movie_{c_code}")])
+        keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")])
+        await query.message.edit_text("🗑 O'chirmoqchi bo'lgan kinoni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("del_movie_"):
+        movie_code = data.replace("del_movie_", "")
+        initial_len = len(catalog)
+        catalog[:] = [item for item in catalog if str(item.get("code")) != str(movie_code)]
+        if len(catalog) < initial_len:
+            save_data("catalog.json", catalog)
+            await query.message.edit_text("✅ Kino muvaffaqiyatli o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        else:
+            await query.answer("❌ Bunday kino topilmadi!", show_alert=True)
 
     elif data == "add_admin":
         context.user_data["state"] = "waiting_for_new_admin"

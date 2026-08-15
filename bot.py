@@ -6,21 +6,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
 
+CHANNEL_ID = "-3932364635" 
+
 def load_data(filename, default):
     if os.path.exists(filename):
         try:
             with open(filename, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if filename == "channels.json":
-                    fixed_list = []
-                    if isinstance(data, list):
-                        for item in data:
-                            if isinstance(item, dict):
-                                fixed_list.append(item)
-                            elif isinstance(item, str):
-                                fixed_list.append({"url": item, "type": "tg"})
-                    return fixed_list
-                return data
+                return json.load(f)
         except:
             return default
     return default
@@ -36,7 +28,7 @@ admins = load_data("admins.json", [ADMIN_ID])
 vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000"})
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
-    "sub": "⚠️ Botimizdan foydalanish uchun quyidagi kanallarga obuna bo'ling yoki VIP obuna sotib oling:",
+    "sub": "⚠️ Botimizdan foydalanish uchun quyidagi kanallarga obuna bo'ling:",
     "not_found": "❌ Bunday kodli kino topilmadi.",
     "vip_tariffs": "💎 VIP obuna orqali barcha cheklovlarni olib tashlang!"
 })
@@ -254,16 +246,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
             
-            if text.lower() != "skip" and (update.message.photo or update.message.video):
-                # Agar kanal obunasi qo'shilgan bo'lsa yoki xohlasangiz kanalga tashlaydi, 
-                # lekin kanal majburiy emas endi
-                pass
+            caption_text = f"🎬 Kino #1\n📌 Kod: {new_code}\n\n{movie_name}"
+            
+            # Kanalga tashlash qismi
+            if CHANNEL_ID and CHANNEL_ID != "-100xxxxxxxxx":
+                try:
+                    if update.message.photo:
+                        preview_id = update.message.photo[-1].file_id
+                        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=preview_id, caption=caption_text)
+                    elif update.message.video:
+                        preview_id = update.message.video.file_id
+                        await context.bot.send_video(chat_id=CHANNEL_ID, video=preview_id, caption=caption_text)
+                    
+                    # Asosiy kinoni ham kanalga yuborish
+                    await context.bot.send_video(chat_id=CHANNEL_ID, video=file_id, caption=f"🎬 {movie_name}\n📌 Kod: {new_code}")
+                except Exception as e:
+                    print(f"Kanalga tashlashda xatolik: {e}")
 
             catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
             save_data("catalog.json", catalog)
             
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\n📌 Kod: {new_code}")
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}")
             return
 
         if state == "waiting_for_ad":

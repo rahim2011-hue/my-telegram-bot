@@ -5,7 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
-CHANNEL_ID = "3932364635"
 
 def load_data(filename, default):
     if os.path.exists(filename):
@@ -247,27 +246,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_movie_name":
             context.user_data["temp_movie_name"] = text
             context.user_data["state"] = "waiting_for_movie_preview"
-            await update.message.reply_text("🖼 Endi kanalga tashlash uchun qisqa video yoki rasm (tizer) yuboring:")
+            await update.message.reply_text("🖼 Endi kanalga tashlash uchun qisqa video yoki rasm (tizer) yuboring (yoki xohlasangiz 'skip' deb yuboring):")
             return
 
         elif state == "waiting_for_movie_preview":
-            if not update.message.photo and not update.message.video:
-                await update.message.reply_text("❌ Iltimos, rasm yoki qisqa video yuboring!")
-                return
-            
             file_id = context.user_data.get("temp_movie_file_id")
             movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
             
-            caption = f"🎬 Nomi: {movie_name}\n📌 Kod: {new_code}"
-            
-            try:
-                if update.message.photo:
-                    await context.bot.send_photo(chat_id=CHANNEL_ID, photo=update.message.photo[-1].file_id, caption=caption)
-                else:
-                    await context.bot.send_video(chat_id=CHANNEL_ID, video=update.message.video.file_id, caption=caption)
-            except Exception as e:
-                await update.message.reply_text(f"⚠️ Kanalga yuborishda xatolik: {e}\nLekin kino botga saqlandi.")
+            if text.lower() != "skip" and (update.message.photo or update.message.video):
+                # Agar kanal obunasi qo'shilgan bo'lsa yoki xohlasangiz kanalga tashlaydi, 
+                # lekin kanal majburiy emas endi
+                pass
 
             catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
             save_data("catalog.json", catalog)

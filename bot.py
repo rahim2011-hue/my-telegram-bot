@@ -6,6 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
 
+# 📌 Kanal ID raqamingizni shu yerga yozing:
 CHANNEL_ID = "-1003932364635" 
 
 def load_data(filename, default):
@@ -246,9 +247,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
             
-            caption_text = f"🎬 Kino #1\n📌 Kod: {new_code}\n\n{movie_name}"
+            caption_text = f"🎬 {movie_name}\n📌 Kod: {new_code}"
             
-            # Kanalga tashlash qismi
+            # Kanalga faqat tizer (rasm yoki video) yuborish (Asosiy kino bormaydi)
             if CHANNEL_ID and CHANNEL_ID != "-100xxxxxxxxx":
                 try:
                     if update.message.photo:
@@ -257,9 +258,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     elif update.message.video:
                         preview_id = update.message.video.file_id
                         await context.bot.send_video(chat_id=CHANNEL_ID, video=preview_id, caption=caption_text)
-                    
-                    # Asosiy kinoni ham kanalga yuborish
-                    await context.bot.send_video(chat_id=CHANNEL_ID, video=file_id, caption=f"🎬 {movie_name}\n📌 Kod: {new_code}")
                 except Exception as e:
                     print(f"Kanalga tashlashda xatolik: {e}")
 
@@ -267,7 +265,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data("catalog.json", catalog)
             
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}")
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va tizer kanalga yuborildi!\n📌 Kod: {new_code}")
             return
 
         if state == "waiting_for_ad":
@@ -334,7 +332,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == "waiting_for_search_id":
             context.user_data["state"] = None
-            found = next((item for item in catalog if str(item.get("code")) == text), None)
+            found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
             if found:
                 await update.message.reply_video(video=found["file_id"], caption=f"🎬 {found['title']}\n📌 Kod: {found['code']}")
             else:
@@ -344,10 +342,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_delete_code":
             context.user_data["state"] = None
             initial_len = len(catalog)
-            catalog[:] = [item for item in catalog if str(item.get("code")) != text]
+            catalog[:] = [item for item in catalog if str(item.get("code")).strip() != text.strip()]
             if len(catalog) < initial_len:
                 save_data("catalog.json", catalog)
-                await update.message.reply_text("🗑 Kino o'chirildi!")
+                await update.message.reply_text("🗑 Kino muvaffaqiyatli o'chirildi!")
             else:
                 await update.message.reply_text(bot_texts["not_found"])
             return
@@ -371,7 +369,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
-    found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
+    found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.strip().lower()), None)
     if found_movie:
         await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
     else:

@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
 
-CHANNEL_ID = "-3932364635" 
+CHANNEL_ID = "-1003932364635" 
 
 def load_data(filename, default):
     if os.path.exists(filename):

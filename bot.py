@@ -23,7 +23,7 @@ users = load_data("users.json", {})
 catalog = load_data("catalog.json", [])
 channels = load_data("channels.json", []) 
 admins = load_data("admins.json", [ADMIN_ID])
-vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000"})
+vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": ""})
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
     "sub": "⚠️ Botimizdan to'liq foydalanish uchun quyidagi kanallarga obuna bo'ling:",
@@ -131,7 +131,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
     
-    # Admin menyu tugmalari bosilganda eski state'larni tozalaymiz
     admin_menu_buttons = [
         "📊 Statistika", "🎬 Kino boshqaruvi", "🎁 Referal", 
         "📢 Majburiy obuna", "👥 Foydalanuvchilar", "👮‍♂️ Adminlar", 
@@ -143,7 +142,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = context.user_data.get("state")
 
-    # 1. Admin holatlarini (state) tekshiramiz
     if is_admin and state:
         if state == "waiting_for_channel":
             context.user_data["state"] = None
@@ -165,6 +163,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_id = update.message.photo[-1].file_id
 
             context.user_data["temp_movie_file_id"] = file_id
+            context.user_data["state"] = "waiting_for_preview"
+            await update.message.reply_text("📹 Kanalga tashlash uchun qisqa video yoki rasm yuboring:")
+            return
+
+        elif state == "waiting_for_preview":
+            if not update.message.video and not update.message.photo and not update.message.document:
+                await update.message.reply_text("❌ Iltimos, qisqa video yoki rasm yuboring!")
+                return
+            
+            if update.message.video:
+                prev_id = update.message.video.file_id
+                prev_type = "video"
+            elif update.message.photo:
+                prev_id = update.message.photo[-1].file_id
+                prev_type = "photo"
+            else:
+                prev_id = update.message.document.file_id
+                prev_type = "document"
+
+            context.user_data["temp_preview_id"] = prev_id
+            context.user_data["temp_preview_type"] = prev_type
             context.user_data["state"] = "waiting_for_movie_name"
             await update.message.reply_text("✍️ Kinoning nomini yozing:")
             return
@@ -173,12 +192,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["temp_movie_name"] = text
             new_code = str(len(catalog) + 1)
             file_id = context.user_data.get("temp_movie_file_id")
+            prev_id = context.user_data.get("temp_preview_id")
+            prev_type = context.user_data.get("temp_preview_type")
             
-            catalog.append({"code": new_code, "title": text, "file_id": file_id})
+            catalog.append({
+                "code": new_code, 
+                "title": text, 
+                "file_id": file_id,
+                "preview_id": prev_id,
+                "preview_type": prev_type
+            })
             save_data("catalog.json", catalog)
             
+            # Kinoni avtomatik kanalga tashlash (agar VIP kanal yoki asosiy kanal sozlangan bo'lsa)
+            channel_target = vip_settings.get("channel_id", "")
+            if channel_target:
+                try:
+                    caption = f"🎬 {text}\nBizning botimiz: 👈 @{context.bot.username} 👈"
+                    if prev_type == "video":
+                        await context.bot.send_video(chat_id=channel_target, video=prev_id, caption=caption)
+                    elif prev_type == "photo":
+                        await context.bot.send_photo(chat_id=channel_target, photo=prev_id, caption=caption)
+                    else:
+                        await context.bot.send_document(chat_id=channel_target, document=prev_id, caption=caption)
+                except Exception as e:
+                    print(f"Kanalga tashlashda xatolik: {e}")
+
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":
@@ -264,7 +305,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
-    # 2. Admin menyu tugmalari bosilgandagi amallar
+        elif state == "waiting_for_post_channel":
+            context.user_data["state"] = None
+            vip_settings["channel_id"] = text
+            save_data("vip_settings.json", vip_settings)
+            await update.message.reply_text(f"✅ Kinolar tashlanadigan kanal ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
+            return
+
     if is_admin:
         if text == "🎬 Kino boshqaruvi":
             keyboard = InlineKeyboardMarkup([
@@ -292,9 +339,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
                 [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
                 [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
+                [InlineKeyboardButton("📢 Kino kanali", callback_data="set_post_channel")],
                 [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
             ])
-            await update.message.reply_text("ℹ️ Bot matnlarini sozlash bo'limi:", reply_markup=keyboard)
+            await update.message.reply_text("ℹ️ Bot matnlari va sozlamalari:", reply_markup=keyboard)
             return
 
         elif text == "👥 Foydalanuvchilar":
@@ -337,7 +385,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🔍 Kino kodini kiriting:")
             return
 
-    # 3. Oddiy foydalanuvchi obuna tekshiruvi
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id, context)
         if not is_subbed:
@@ -391,7 +438,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Chekingiz adminga yuborildi! Tez orada tekshirib tasdiqlashadi.")
         return
 
-    # 4. Kino kodini qidirish
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
     
     if found_movie:
@@ -523,6 +569,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "set_vip_text":
         context.user_data["state"] = "set_vip_text_input"
         await query.message.edit_text("💎 Yangi VIP tariflar matnini yuboring:", parse_mode="Markdown")
+
+    elif data == "set_post_channel":
+        context.user_data["state"] = "waiting_for_post_channel"
+        await query.message.edit_text("📢 Kinolar avtomatik tashlanadigan kanal username yoki ID sini kiriting (masalan: @kanal_username):", parse_mode="Markdown")
 
     elif data == "add_movie":
         context.user_data["state"] = "waiting_for_movie_file"

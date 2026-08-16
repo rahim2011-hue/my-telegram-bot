@@ -68,6 +68,27 @@ async def check_telegram_subscription(bot, user_id):
                 continue
     return True
 
+async def send_subscription_required(update_or_query, context):
+    query = getattr(update_or_query, "callback_query", None)
+    message = query.message if query else update_or_query.message
+    
+    keyboard_buttons = []
+    for ch in channels:
+        if not isinstance(ch, dict):
+            continue
+        if ch.get("type") == "social":
+            keyboard_buttons.append([InlineKeyboardButton(f"🌐 {ch.get('name', 'Link')}", url=ch.get("url", "https://t.me"))])
+        else:
+            url = ch.get("url", "")
+            clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
+            if clean_ch:
+                keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=f"https://t.me/{clean_ch}")])
+    
+    keyboard_buttons.append([InlineKeyboardButton("💎 VIP obuna sotib olish", callback_data="buy_vip")])
+    keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")])
+    
+    await message.reply_text(bot_texts["sub"], reply_markup=InlineKeyboardMarkup(keyboard_buttons))
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = str(user.id)
@@ -77,6 +98,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
         save_data("users.json", users)
 
+    if user.id in admins or user.id == ADMIN_ID:
+        await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
+        return
+
+    is_subbed = await check_telegram_subscription(context.bot, user.id)
+    if not is_subbed:
+        await send_subscription_required(update, context)
+        return
+
     if context.args:
         arg = context.args[0]
         if arg.isdigit():
@@ -85,30 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
                 return
 
-    if user.id in admins or user.id == ADMIN_ID:
-        await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
-    else:
-        is_subbed = await check_telegram_subscription(context.bot, user.id)
-        if not is_subbed:
-            keyboard_buttons = []
-            for ch in channels:
-                if not isinstance(ch, dict):
-                    continue
-                if ch.get("type") == "social":
-                    keyboard_buttons.append([InlineKeyboardButton(f"🌐 {ch.get('name', 'Link')}", url=ch.get("url", "https://t.me"))])
-                else:
-                    url = ch.get("url", "")
-                    clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
-                    if clean_ch:
-                        keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=f"https://t.me/{clean_ch}")])
-            
-            keyboard_buttons.append([InlineKeyboardButton("💎 VIP obuna sotib olish", callback_data="buy_vip")])
-            keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")])
-            
-            await update.message.reply_text(bot_texts["sub"], reply_markup=InlineKeyboardMarkup(keyboard_buttons))
-            return
-
-        await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
+    await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip() if update.message.text else ""
@@ -372,6 +379,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
+    # Oddiy foydalanuvchi biror narsa yozsa yoki kod yuborsa, har safar obunani tekshiramiz:
+    if not is_admin:
+        is_subbed = await check_telegram_subscription(context.bot, user_id)
+        if not is_subbed:
+            await send_subscription_required(update, context)
+            return
+
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.strip().lower()), None)
     if found_movie:
         await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
@@ -390,7 +404,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await check_telegram_subscription(context.bot, user_id):
             try: await query.message.delete()
             except: pass
-            await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi.", reply_markup=USER_KEYBOARD)
+            await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
             await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
         return

@@ -77,6 +77,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
         save_data("users.json", users)
 
+    if context.args:
+        arg = context.args[0]
+        if arg.isdigit():
+            found_movie = next((item for item in catalog if str(item.get("code")) == arg), None)
+            if found_movie:
+                await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
+                return
+
     if user.id in admins or user.id == ADMIN_ID:
         await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
     else:
@@ -239,7 +247,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_movie_name":
             context.user_data["temp_movie_name"] = text
             context.user_data["state"] = "waiting_for_movie_preview"
-            await update.message.reply_text("🖼 Endi kanalga tashlash uchun qisqa video yoki rasm (tizer) yuboring (yoki xohlasangiz 'skip' deb yuboring):")
+            await update.message.reply_text("🖼 Endi kanalga tashlash uchun qisqa video yoki rasm (tizer) yuboring:")
             return
 
         elif state == "waiting_for_movie_preview":
@@ -247,16 +255,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
             
-            caption_text = f"🎬 {movie_name}\n📌 Kod: {new_code}"
+            caption_text = f"🎬 {movie_name}\n📌 Kod: {new_code}\n\n[ Multfilmni ko'rish ] tugmasini bosing"
+            
+            bot_info = await context.bot.get_me()
+            deep_link = f"https://t.me/{bot_info.username}?start={new_code}"
+            
+            channel_keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Multfilmni ko'rish ↗", url=deep_link)]
+            ])
             
             if CHANNEL_ID and CHANNEL_ID != "-100xxxxxxxxx":
                 try:
                     if update.message.photo:
                         preview_id = update.message.photo[-1].file_id
-                        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=preview_id, caption=caption_text)
+                        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=preview_id, caption=caption_text, reply_markup=channel_keyboard)
                     elif update.message.video:
                         preview_id = update.message.video.file_id
-                        await context.bot.send_video(chat_id=CHANNEL_ID, video=preview_id, caption=caption_text)
+                        await context.bot.send_video(chat_id=CHANNEL_ID, video=preview_id, caption=caption_text, reply_markup=channel_keyboard)
                 except Exception as e:
                     print(f"Kanalga tashlashda xatolik: {e}")
 

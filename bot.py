@@ -130,15 +130,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
+    
+    # Admin menyu tugmalari bosilganda eski state'larni tozalaymiz
+    admin_menu_buttons = [
+        "📊 Statistika", "🎬 Kino boshqaruvi", "🎁 Referal", 
+        "📢 Majburiy obuna", "👥 Foydalanuvchilar", "👮‍♂️ Adminlar", 
+        "📢 Reklama", "💎 VIP boshqaruv", "🔍 ID qidirish", "ℹ️ Sozlamalar"
+    ]
+    
+    if is_admin and text in admin_menu_buttons:
+        context.user_data["state"] = None
+
     state = context.user_data.get("state")
 
-    # 1. Admin holatlarini (state) birinchi bo'lib tekshiramiz
+    # 1. Admin holatlarini (state) tekshiramiz
     if is_admin and state:
         if state == "waiting_for_channel":
             context.user_data["state"] = None
             channels.append({"url": text, "type": "tg"})
             save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Kanal ulandi: {text}")
+            await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_movie_file":
@@ -167,7 +178,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data("catalog.json", catalog)
             
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\n📌 Kod: {new_code}")
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":
@@ -179,7 +190,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     count += 1
                 except:
                     pass
-            await update.message.reply_text(f"✅ Reklama {count} ta odamga yuborildi!")
+            await update.message.reply_text(f"✅ Reklama {count} ta odamga yuborildi!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_social":
@@ -194,35 +205,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             url = context.user_data.get("temp_social_url", "")
             channels.append({"url": url, "type": "social", "name": text})
             save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Ulandi: {text}")
+            await update.message.reply_text(f"✅ Ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "set_start_text_input":
             context.user_data["state"] = None
             bot_texts["start"] = text
             save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Start matni yangilandi!")
+            await update.message.reply_text("✅ Start matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "set_sub_text_input":
             context.user_data["state"] = None
             bot_texts["sub"] = text
             save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Obuna matni yangilandi!")
+            await update.message.reply_text("✅ Obuna matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "set_not_found_text_input":
             context.user_data["state"] = None
             bot_texts["not_found"] = text
             save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Topilmadi matni yangilandi!")
+            await update.message.reply_text("✅ Topilmadi matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "set_vip_text_input":
             context.user_data["state"] = None
             bot_texts["vip_tariffs"] = text
             save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ VIP matni yangilandi!")
+            await update.message.reply_text("✅ VIP matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_search_id":
@@ -241,7 +252,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if new_id not in admins:
                     admins.append(new_id)
                     save_data("admins.json", admins)
-                    await update.message.reply_text("✅ Admin qo'shildi!")
+                    await update.message.reply_text("✅ Admin qo'shildi!", reply_markup=ADMIN_KEYBOARD)
             except:
                 await update.message.reply_text("❌ Xato ID.")
             return
@@ -250,28 +261,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["state"] = None
             vip_settings["card"] = text
             save_data("vip_settings.json", vip_settings)
-            await update.message.reply_text("✅ Karta yangilandi!")
+            await update.message.reply_text("✅ Karta yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
-    # Kino qo'shish jarayonida video tashlanganda state bo'yicha ushlab qolish uchun qo'shimcha tekshiruv
-    if is_admin and context.user_data.get("state") == "waiting_for_movie_file":
-        if update.message.video or update.message.document or update.message.photo:
-            if update.message.video:
-                file_id = update.message.video.file_id
-            elif update.message.document:
-                file_id = update.message.document.file_id
-            else:
-                file_id = update.message.photo[-1].file_id
-
-            context.user_data["temp_movie_file_id"] = file_id
-            context.user_data["state"] = "waiting_for_movie_name"
-            await update.message.reply_text("✍️ Kinoning nomini yozing:")
-            return
-
-    # 2. Admin menyu tugmalari
+    # 2. Admin menyu tugmalari bosilgandagi amallar
     if is_admin:
         if text == "🎬 Kino boshqaruvi":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Kino qo'shish", callback_data="add_movie")],
                 [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie_menu")],
@@ -281,7 +276,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "📢 Majburiy obuna":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📌 Kanal ulash", callback_data="add_channel")],
                 [InlineKeyboardButton("🌐 Ijtimoiy link ulash", callback_data="add_social")],
@@ -293,7 +287,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "ℹ️ Sozlamalar":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎬 Start matni", callback_data="set_start_text")],
                 [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
@@ -305,7 +298,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "👥 Foydalanuvchilar":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("👥 Bot foydalanuvchilari", callback_data="bot_users_list")],
                 [InlineKeyboardButton("📢 Kanal foydalanuvchilari", callback_data="channel_users_list")],
@@ -315,7 +307,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "👮‍♂️ Adminlar":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Admin qo'shish", callback_data="add_admin")],
                 [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_admins")],
@@ -325,7 +316,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "💎 VIP boshqaruv":
-            context.user_data["state"] = None
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
                 [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
@@ -334,7 +324,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "📊 Statistika":
-            context.user_data["state"] = None
             await update.message.reply_text(f"📊 Statistika:\n👥 Foydalanuvchilar: {len(users)}\n🎬 Kinolar: {len(catalog)}\n📢 Kanallar/Linklar: {len(channels)}")
             return
 

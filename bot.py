@@ -47,13 +47,14 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
 ], resize_keyboard=True)
 
 async def check_telegram_subscription(bot, user_id):
-    # Agar foydalanuvchi asosiy admin bo'lsa, obuna talab qilinmaydi
+    # Asosiy admin uchun obuna talab qilinmaydi
     if user_id == ADMIN_ID or user_id in admins:
         return True
 
-    # Faqat "tg" turidagi kanallarni tekshiramiz
+    # Faqat "tg" turidagi kanallarni olamiz
     tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
     
+    # Agar majburiy kanallar umuman qo'shilmagan bo'lsa
     if not tg_channels:
         return True
         
@@ -68,10 +69,12 @@ async def check_telegram_subscription(bot, user_id):
         try:
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
-            if member.status in ["left", "kicked"]:
+            # Agar foydalanuvchi kanalda bo'lmasa (left, kicked, banned)
+            if member.status in ["left", "kicked", "restricted"]:
                 return False
         except Exception as e:
             print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
+            # Xatolik yuzaga kelsa (masalan bot kanalda admin emas yoki xato ID), xavfsizlik uchun obuna yo'q deb topamiz
             return False
             
     return True
@@ -84,16 +87,17 @@ async def send_subscription_required(update_or_query, context):
     for ch in channels:
         if not isinstance(ch, dict):
             continue
+        # Ijtimoiy tarmoqlar (Instagram, YouTube) shunchaki havola bo'lib qoladi
         if ch.get("type") == "social":
             keyboard_buttons.append([InlineKeyboardButton(f"🌐 {ch.get('name', 'Link')}", url=ch.get("url", "https://t.me"))])
         else:
+            # Telegram kanallar esa obuna tugmasi bo'ladi
             url = ch.get("url", "")
             clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
             if clean_ch:
                 channel_link = f"https://t.me/{clean_ch}" if not clean_ch.startswith("-") else url
                 keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=channel_link)])
     
-    keyboard_buttons.append([InlineKeyboardButton("💎 VIP obuna sotib olish", callback_data="buy_vip")])
     keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")])
     
     try:
@@ -112,13 +116,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_admin = (user.id in admins or user.id == ADMIN_ID)
 
-    # ENG MUHIM O'ZGARISH: Agar admin bo'lmasa, har qanday holatda ham avval obuna tekshiriladi!
+    # 1. Admin bo'lmasa, darhol obunani tekshiramiz
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user.id)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
 
+    # Admin bo'lsa admin panel
     if is_admin:
         await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
         return
@@ -139,6 +144,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
+    # 2. Oddiy foydalanuvchi har qanday xabar yozganda ham obunani tekshiramiz
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:

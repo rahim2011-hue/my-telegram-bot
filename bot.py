@@ -49,6 +49,7 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
 async def check_telegram_subscription(bot, user_id):
     if not channels:
         return True
+    # VIP foydalanuvchilar obuna tekshiruvidan o'tadi yoki o'tmaydi (sizning xohishingizga ko'ra, lekin oddiy userlar uchun shart)
     if str(user_id) in users and users.get(str(user_id), {}).get("vip", False):
         return True
 
@@ -96,7 +97,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
         save_data("users.json", users)
 
-    if user.id in admins or user.id == ADMIN_ID:
+    is_admin = (user.id in admins or user.id == ADMIN_ID)
+
+    if is_admin:
         await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
         return
 
@@ -120,6 +123,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     state = context.user_data.get("state")
     is_admin = (user_id in admins or user_id == ADMIN_ID)
+
+    # 1. Agar foydalanuvchi admin bo'lmasa, HAR QANDAY xatoda avval obunani tekshiramiz!
+    if not is_admin:
+        is_subbed = await check_telegram_subscription(context.bot, user_id)
+        if not is_subbed:
+            await send_subscription_required(update, context)
+            return
 
     if text == "🎁 Referal":
         bot_info = await context.bot.get_me()
@@ -376,14 +386,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
-    # 1. Avval obunani tekshiramiz (agar obunadan chiqib ketgan bo'lsa, to'xtatib obuna so'raydi)
-    if not is_admin:
-        is_subbed = await check_telegram_subscription(context.bot, user_id)
-        if not is_subbed:
-            await send_subscription_required(update, context)
-            return
-
-    # 2. Kinoni bazadan aniq qidirish (kod har xil formatda saqlangan bo'lsa ham topadi)
+    # Kinoni bazadan qidirish
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
     
     if found_movie:

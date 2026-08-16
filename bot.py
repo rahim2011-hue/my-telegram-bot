@@ -32,7 +32,7 @@ if not vip_settings.get("channel_id"):
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
     "sub": "⚠️ Botimizdan to'liq foydalanish uchun quyidagi kanallarga obuna bo'ling:",
-    "not_found": "❌ Bunday kodli kino topilmadi.",
+    "not_found": "Bunday kino topilmadi❌",
     "vip_tariffs": "💎 VIP obuna orqali barcha cheklovlarni olib tashlang!"
 })
 
@@ -77,7 +77,7 @@ async def check_telegram_subscription(bot, user_id, context=None):
             
     return True
 
-async def send_subscription_required(update_or_query, context):
+async def send_subscription_required(update_or_query, context, pending_code=None):
     query = getattr(update_or_query, "callback_query", None)
     message = query.message if query else update_or_query.message
     
@@ -94,7 +94,9 @@ async def send_subscription_required(update_or_query, context):
                 channel_link = f"https://t.me/{clean_ch}" if not clean_ch.startswith("-") else url
                 keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=channel_link)])
     
-    keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")])
+    # Qaysi kino kodi bilan kelgan bo'lsa, tekshiruv tugmasiga saqlab qo'yamiz
+    cb_data = f"check_sub_{pending_code}" if pending_code else "check_sub"
+    keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data=cb_data)])
     
     try:
         await message.reply_text(bot_texts["sub"], reply_markup=InlineKeyboardMarkup(keyboard_buttons))
@@ -112,21 +114,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_admin = (user.id in admins or user.id == ADMIN_ID)
 
+    # Agar startda kod bilan kelgan bo'lsa (masalan: /start 1)
+    pending_code = None
+    if context.args:
+        arg = context.args[0].strip()
+        if arg.startswith("ref_"):
+            ref_id = arg.replace("ref_", "")
+            if ref_id in users and ref_id != user_id:
+                if user_id not in users[ref_id]["referrals"]:
+                    users[ref_id]["referrals"].append(user_id)
+                    save_data("users.json", users)
+        else:
+            pending_code = arg
+
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user.id, context)
         if not is_subbed:
-            await send_subscription_required(update, context)
+            await send_subscription_required(update, context, pending_code=pending_code)
             return
 
     if is_admin:
         await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
         return
 
-    if context.args:
-        arg = context.args[0].strip()
-        found_movie = next((item for item in catalog if str(item.get("code")).strip() == arg), None)
+    # Agar obuna bo'lgan bo'lsa va kod bilan kirgan bo'lsa, darhol kinoni tashlaymiz
+    if pending_code:
+        found_movie = next((item for item in catalog if str(item.get("code")).strip() == pending_code), None)
         if found_movie:
-            await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
+            await update.message.reply_video(
+                video=found_movie["file_id"], 
+                caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}",
+                reply_markup=USER_KEYBOARD
+            )
+            return
+        else:
+            await update.message.reply_text(bot_texts["not_found"], reply_markup=USER_KEYBOARD)
             return
 
     await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
@@ -223,7 +245,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     bot_info = await context.bot.get_me()
                     bot_username = bot_info.username
                     
-                    # Matn to'g'irlandi: takrorlanish olib tashlandi va kino kodi qo'shildi
                     caption = f"🎬 {movie_title}\n📌 Kod: {new_code}\n\n🤖 Bizning bot: @{bot_username}\n👇 Ko'rish uchun quyidagi tugmani bosing:"
                     
                     keyboard = InlineKeyboardMarkup([
@@ -473,10 +494,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if found_movie:
         await update.message.reply_video(
             video=found_movie["file_id"], 
-            caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}"
+            caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}",
+            reply_markup=USER_KEYBOARD
         )
     else:
-        await update.message.reply_text(bot_texts["not_found"])
+        await update.message.reply_text(bot_texts["not_found"], reply_markup=USER_KEYBOARD)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -485,13 +507,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
-    if data == "check_sub":
+    if data.startswith("check_sub"):
         if await check_telegram_subscription(context.bot, user_id, context):
             try: await query.message.delete()
             except: pass
+            
+            # Agar tekshirish tugmasida kino kodi ham biriktirilgan bo'lsa (masalan: check_sub_1)
+            parts = data.split("_")
+            if len(parts) > 2:
+                movie_code = parts[2]
+                found_movie = next((item for item in catalog if str(item.get("code")).strip() == movie_code), None)
+                if found_movie:
+                    await context.bot.send_video(
+                        chat_id=user_id,
+                        video=found_movie["file_id"],
+                        caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}",
+                        reply_markup=USER_KEYBOARD
+                    )
+                    return
+
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz yoki so'rovingiz qabul qilinmadi!", show_alert=True)
+            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
         return
 
     if data.startswith("vip_"):

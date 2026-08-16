@@ -46,7 +46,7 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📞 Aloqa")]
 ], resize_keyboard=True)
 
-async def check_telegram_subscription(bot, user_id):
+async def check_telegram_subscription(bot, user_id, context=None):
     if user_id == ADMIN_ID or user_id in admins:
         return True
 
@@ -55,6 +55,10 @@ async def check_telegram_subscription(bot, user_id):
 
     tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
     if not tg_channels:
+        return True
+
+    # Tezlik uchun bir marta tekshirilsa, context'ga yozib qo'yamiz
+    if context and context.user_data.get("is_subbed") == True:
         return True
 
     for ch in tg_channels:
@@ -66,11 +70,15 @@ async def check_telegram_subscription(bot, user_id):
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
             if member.status in ["left", "kicked", "restricted"]:
+                if context:
+                    context.user_data["is_subbed"] = False
                 return False
         except Exception as e:
             print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
             return False
             
+    if context:
+        context.user_data["is_subbed"] = True
     return True
 
 async def send_subscription_required(update_or_query, context):
@@ -101,6 +109,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = str(user.id)
     context.user_data["state"] = None
+    context.user_data["is_subbed"] = None
     
     if user_id not in users:
         users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
@@ -109,7 +118,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (user.id in admins or user.id == ADMIN_ID)
 
     if not is_admin:
-        is_subbed = await check_telegram_subscription(context.bot, user.id)
+        is_subbed = await check_telegram_subscription(context.bot, user.id, context)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
@@ -130,15 +139,95 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
+    text = update.message.text.strip() if update.message.text else ""
 
-    # 🚨 ENG KESKIN TEKshiruv: Admin bo'lmasa, har qanday tugma yoki xabarda oldin obuna tekshiriladi!
+    # Admin menyu tugmalari bosilganda holatni darhol tozalash va to'g'ri yo'naltirish
+    if is_admin:
+        if text == "🎬 Kino boshqaruvi":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ Kino qo'shish", callback_data="add_movie")],
+                [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie_menu")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text("🎬 Kino boshqaruvi:", reply_markup=keyboard)
+            return
+
+        elif text == "📢 Majburiy obuna":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📌 Kanal ulash", callback_data="add_channel")],
+                [InlineKeyboardButton("🌐 Ijtimoiy link ulash", callback_data="add_social")],
+                [InlineKeyboardButton("🗑 Kanal o'chirish", callback_data="del_channel_menu")],
+                [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_channels")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text("📢 Majburiy obuna boshqaruvi:", reply_markup=keyboard)
+            return
+
+        elif text == "ℹ️ Sozlamalar":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎬 Start matni", callback_data="set_start_text")],
+                [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
+                [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
+                [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text("ℹ️ Bot matnlarini sozlash bo'limi:", reply_markup=keyboard)
+            return
+
+        elif text == "👥 Foydalanuvchilar":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("👥 Bot foydalanuvchilari", callback_data="bot_users_list")],
+                [InlineKeyboardButton("📢 Kanal foydalanuvchilari", callback_data="channel_users_list")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text("👥 Foydalanuvchilar bo'limini tanlang:", reply_markup=keyboard)
+            return
+
+        elif text == "👮‍♂️ Adminlar":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ Admin qo'shish", callback_data="add_admin")],
+                [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_admins")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text("👮‍♂️ Adminlar menyusi:", reply_markup=keyboard)
+            return
+
+        elif text == "💎 VIP boshqaruv":
+            context.user_data["state"] = None
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text(f"💳 Hozirgi karta: {vip_settings['card']}", reply_markup=keyboard)
+            return
+
+        elif text == "📊 Statistika":
+            context.user_data["state"] = None
+            await update.message.reply_text(f"📊 Statistika:\n👥 Foydalanuvchilar: {len(users)}\n🎬 Kinolar: {len(catalog)}\n📢 Kanallar/Linklar: {len(channels)}")
+            return
+
+        elif text == "📢 Reklama":
+            context.user_data["state"] = "waiting_for_ad"
+            await update.message.reply_text("📢 Reklama postini yuboring:")
+            return
+
+        elif text == "🔍 ID qidirish":
+            context.user_data["state"] = "waiting_for_search_id"
+            await update.message.reply_text("🔍 Kino kodini kiriting:")
+            return
+
+    # Oddiy foydalanuvchi yoki admin obuna tekshiruvi
     if not is_admin:
-        is_subbed = await check_telegram_subscription(context.bot, user_id)
+        is_subbed = await check_telegram_subscription(context.bot, user_id, context)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
 
-    text = update.message.text.strip() if update.message.text else ""
     user_id_str = str(user_id)
     state = context.user_data.get("state")
 
@@ -188,77 +277,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if is_admin:
-        if text == "📊 Statistika":
-            await update.message.reply_text(f"📊 Statistika:\n👥 Foydalanuvchilar: {len(users)}\n🎬 Kinolar: {len(catalog)}\n📢 Kanallar/Linklar: {len(channels)}")
-            return
-
-        elif text == "🎬 Kino boshqaruvi":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ Kino qo'shish", callback_data="add_movie")],
-                [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie_menu")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text("🎬 Kino boshqaruvi:", reply_markup=keyboard)
-            return
-
-        elif text == "📢 Majburiy obuna":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📌 Kanal ulash", callback_data="add_channel")],
-                [InlineKeyboardButton("🌐 Ijtimoiy link ulash", callback_data="add_social")],
-                [InlineKeyboardButton("🗑 Kanal o'chirish", callback_data="del_channel_menu")],
-                [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_channels")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text("📢 Majburiy obuna boshqaruvi:", reply_markup=keyboard)
-            return
-
-        elif text == "ℹ️ Sozlamalar":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎬 Start matni", callback_data="set_start_text")],
-                [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
-                [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
-                [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text("ℹ️ Bot matnlarini sozlash bo'limi:", reply_markup=keyboard)
-            return
-
-        elif text == "👥 Foydalanuvchilar":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("👥 Bot foydalanuvchilari", callback_data="bot_users_list")],
-                [InlineKeyboardButton("📢 Kanal foydalanuvchilari", callback_data="channel_users_list")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text("👥 Foydalanuvchilar bo'limini tanlang:", reply_markup=keyboard)
-            return
-
-        elif text == "👮‍♂️ Adminlar":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ Admin qo'shish", callback_data="add_admin")],
-                [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_admins")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text("👮‍♂️ Adminlar menyusi:", reply_markup=keyboard)
-            return
-
-        elif text == "💎 VIP boshqaruv":
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
-                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
-            ])
-            await update.message.reply_text(f"💳 Hozirgi karta: {vip_settings['card']}", reply_markup=keyboard)
-            return
-
-        elif text == "📢 Reklama":
-            context.user_data["state"] = "waiting_for_ad"
-            await update.message.reply_text("📢 Reklama postini yuboring:")
-            return
-
-        elif text == "🔍 ID qidirish":
-            context.user_data["state"] = "waiting_for_search_id"
-            await update.message.reply_text("🔍 Kino kodini kiriting:")
-            return
-
         if state == "waiting_for_movie_file":
             if not update.message.video and not update.message.document:
                 await update.message.reply_text("❌ Kinoni to'liq formatda yuboring!")
@@ -395,11 +413,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
     if data == "check_sub":
-        if await check_telegram_subscription(context.bot, user_id):
+        if await check_telegram_subscription(context.bot, user_id, context):
             try: await query.message.delete()
             except: pass
+            context.user_data["is_subbed"] = True
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
+            context.user_data["is_subbed"] = False
             await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
         return
 

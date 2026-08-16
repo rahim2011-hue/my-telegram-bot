@@ -108,12 +108,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if context.args:
-        arg = context.args[0]
-        if arg.isdigit():
-            found_movie = next((item for item in catalog if str(item.get("code")) == arg), None)
-            if found_movie:
-                await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
-                return
+        arg = context.args[0].strip()
+        found_movie = next((item for item in catalog if str(item.get("code")).strip() == arg), None)
+        if found_movie:
+            await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
+            return
 
     await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
 
@@ -379,14 +378,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
-    # Oddiy foydalanuvchi biror narsa yozsa yoki kod yuborsa, har safar obunani tekshiramiz:
+    # Oddiy foydalanuvchi biror narsa yozsa, har safar obunani tekshiramiz:
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
 
-    found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.strip().lower()), None)
+    # Kinoni kod bo'yicha aniq topish (bo'sh joylarsiz solishtirish)
+    found_movie = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
     if found_movie:
         await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
     else:

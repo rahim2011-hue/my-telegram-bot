@@ -206,22 +206,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            channel_target = vip_settings.get("channel_id", "")
+            # Kanalga tashlashni to'g'rilash va tugma qo'shish
+            channel_target = vip_settings.get("channel_id", "").strip()
             if channel_target:
                 try:
-                    bot_username = context.bot.username
-                    caption = f"🎬 {movie_title}\nBizning botimiz: 👈 @{bot_username} 👈"
+                    bot_info = await context.bot.get_me()
+                    bot_username = bot_info.username
+                    
+                    caption = f"🎬 {movie_title}\nBizning botimiz: 👈 @{bot_username} 👈\nMultfilmni korish uchun pastdagi tugmani bosing 👇👇"
+                    
+                    # Kanalga o'tish yoki botdan ko'rish uchun inline tugma
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("▶️ Ko'rish uchun bosing", url=f"https://t.me/{bot_username}?start={new_code}")]
+                    ])
+
                     if prev_type == "video":
-                        await context.bot.send_video(chat_id=channel_target, video=prev_id, caption=caption)
+                        await context.bot.send_video(chat_id=channel_target, video=prev_id, caption=caption, reply_markup=keyboard)
                     elif prev_type == "photo":
-                        await context.bot.send_photo(chat_id=channel_target, photo=prev_id, caption=caption)
+                        await context.bot.send_photo(chat_id=channel_target, photo=prev_id, caption=caption, reply_markup=keyboard)
                     else:
-                        await context.bot.send_document(chat_id=channel_target, document=prev_id, caption=caption)
+                        await context.bot.send_document(chat_id=channel_target, document=prev_id, caption=caption, reply_markup=keyboard)
                 except Exception as e:
                     print(f"Kanalga tashlashda xatolik: {e}")
 
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va saqlandi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":

@@ -128,18 +128,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip() if update.message.text else ""
     user_id = update.effective_user.id
-    user_id_str = str(user_id)
-    state = context.user_data.get("state")
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
-    # 🛑 ENG MUHIM QISM: Agar foydalanuvchi admin bo'lmasa, har qanday xabar yozganda/tugma bosganda OBUNA QAT'IY TEKshiriladi
+    # 🚨 ENG KESKIN TEKshiruv: Admin bo'lmasa, har qanday tugma yoki xabarda oldin obuna tekshiriladi!
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
+
+    text = update.message.text.strip() if update.message.text else ""
+    user_id_str = str(user_id)
+    state = context.user_data.get("state")
 
     if text == "🎁 Referal":
         bot_info = await context.bot.get_me()
@@ -260,12 +261,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state == "waiting_for_movie_file":
             if not update.message.video and not update.message.document:
-                await update.message.reply_text("❌ Iltimos, kinoni to'liq formatda yuboring!")
+                await update.message.reply_text("❌ Kinoni to'liq formatda yuboring!")
                 return
             file_id = update.message.video.file_id if update.message.video else update.message.document.file_id
             context.user_data["temp_movie_file_id"] = file_id
             context.user_data["state"] = "waiting_for_movie_name"
-            await update.message.reply_text("✍️ Endi kinoning nomini yozing:")
+            await update.message.reply_text("✍️ Kinoning nomini yozing:")
             return
 
         elif state == "waiting_for_movie_name":
@@ -278,7 +279,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_id = context.user_data.get("temp_movie_file_id")
             movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
-            caption_text = f"🎬 {movie_name}\n📌 Kod: {new_code}"
             
             catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
             save_data("catalog.json", catalog)
@@ -540,7 +540,7 @@ if __name__ == "__main__":
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | (filters.TEXT & ~filters.COMMAND), handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, handle_message))
 
     print("🤖 Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()

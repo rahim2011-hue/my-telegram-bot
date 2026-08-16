@@ -64,7 +64,6 @@ async def check_telegram_subscription(bot, user_id, context=None):
         try:
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
-            # Yopiq kanallarda so'rov yuborganlar ham ruxsat olishi uchun 'restricted' yoki 'member' hamda 'creator', 'administrator' holatlari tekshiriladi
             if member.status in ["left", "kicked"]:
                 return False
         except Exception as e:
@@ -133,7 +132,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip() if update.message.text else ""
     state = context.user_data.get("state")
 
-    # 1. Oldin admin holatlarini (state) to'liq tekshiramiz
+    # 1. Admin holatlarini (state) birinchi bo'lib tekshiramiz
     if is_admin and state:
         if state == "waiting_for_channel":
             context.user_data["state"] = None
@@ -143,10 +142,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == "waiting_for_movie_file":
-            if not update.message.video and not update.message.document:
-                await update.message.reply_text("❌ Kinoni to'liq formatda yuboring!")
+            if not update.message.video and not update.message.document and not update.message.photo:
+                await update.message.reply_text("❌ Kinoni video yoki fayl ko'rinishida yuboring!")
                 return
-            file_id = update.message.video.file_id if update.message.video else update.message.document.file_id
+            
+            if update.message.video:
+                file_id = update.message.video.file_id
+            elif update.message.document:
+                file_id = update.message.document.file_id
+            else:
+                file_id = update.message.photo[-1].file_id
+
             context.user_data["temp_movie_file_id"] = file_id
             context.user_data["state"] = "waiting_for_movie_name"
             await update.message.reply_text("✍️ Kinoning nomini yozing:")
@@ -154,20 +160,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == "waiting_for_movie_name":
             context.user_data["temp_movie_name"] = text
-            context.user_data["state"] = "waiting_for_movie_preview"
-            await update.message.reply_text("🖼 Tizer uchun rasm yoki video yuboring:")
-            return
-
-        elif state == "waiting_for_movie_preview":
-            file_id = context.user_data.get("temp_movie_file_id")
-            movie_name = context.user_data.get("temp_movie_name")
             new_code = str(len(catalog) + 1)
+            file_id = context.user_data.get("temp_movie_file_id")
             
-            catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
+            catalog.append({"code": new_code, "title": text, "file_id": file_id})
             save_data("catalog.json", catalog)
             
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino qo'shildi!\n📌 Kod: {new_code}")
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi!\n📌 Kod: {new_code}")
             return
 
         elif state == "waiting_for_ad":
@@ -251,6 +251,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             vip_settings["card"] = text
             save_data("vip_settings.json", vip_settings)
             await update.message.reply_text("✅ Karta yangilandi!")
+            return
+
+    # Kino qo'shish jarayonida video tashlanganda state bo'yicha ushlab qolish uchun qo'shimcha tekshiruv
+    if is_admin and context.user_data.get("state") == "waiting_for_movie_file":
+        if update.message.video or update.message.document or update.message.photo:
+            if update.message.video:
+                file_id = update.message.video.file_id
+            elif update.message.document:
+                file_id = update.message.document.file_id
+            else:
+                file_id = update.message.photo[-1].file_id
+
+            context.user_data["temp_movie_file_id"] = file_id
+            context.user_data["state"] = "waiting_for_movie_name"
+            await update.message.reply_text("✍️ Kinoning nomini yozing:")
             return
 
     # 2. Admin menyu tugmalari
@@ -411,7 +426,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz yoki so'rovingiz tasdiqlanmadi!", show_alert=True)
+            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz yoki so'rovingiz qabul qilinmadi!", show_alert=True)
         return
 
     if data.startswith("vip_"):

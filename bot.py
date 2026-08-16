@@ -23,7 +23,13 @@ users = load_data("users.json", {})
 catalog = load_data("catalog.json", [])
 channels = load_data("channels.json", []) 
 admins = load_data("admins.json", [ADMIN_ID])
-vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": ""})
+
+# Kanal ID si to'g'ridan-to'g'ri o'rnatildi
+vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": "-1003932364635"})
+if not vip_settings.get("channel_id"):
+    vip_settings["channel_id"] = "-1003932364635"
+    save_data("vip_settings.json", vip_settings)
+
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
     "sub": "⚠️ Botimizdan to'liq foydalanish uchun quyidagi kanallarga obuna bo'ling:",
@@ -145,9 +151,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_admin and state:
         if state == "waiting_for_channel":
             context.user_data["state"] = None
-            channels.append({"url": text, "type": "tg"})
-            save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
+            clean_new_ch = text.strip()
+            exists = any(c.get("url") == clean_new_ch for c in channels if isinstance(c, dict))
+            if not exists:
+                channels.append({"url": clean_new_ch, "type": "tg"})
+                save_data("channels.json", channels)
+                await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {clean_new_ch}", reply_markup=ADMIN_KEYBOARD)
+            else:
+                await update.message.reply_text("⚠️ Bu kanal allaqachon qo'shilgan!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_movie_file":
@@ -206,31 +217,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            # Kanalga tashlashni to'g'rilash va tugma qo'shish
-            channel_target = vip_settings.get("channel_id", "").strip()
-            if channel_target:
+            # Kanalga avtomatik jo'natish
+            channel_target_raw = vip_settings.get("channel_id", "-1003932364635").strip()
+            if channel_target_raw:
                 try:
                     bot_info = await context.bot.get_me()
                     bot_username = bot_info.username
                     
                     caption = f"🎬 {movie_title}\nBizning botimiz: 👈 @{bot_username} 👈\nMultfilmni korish uchun pastdagi tugmani bosing 👇👇"
                     
-                    # Kanalga o'tish yoki botdan ko'rish uchun inline tugma
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("▶️ Ko'rish uchun bosing", url=f"https://t.me/{bot_username}?start={new_code}")]
                     ])
 
-                    if prev_type == "video":
-                        await context.bot.send_video(chat_id=channel_target, video=prev_id, caption=caption, reply_markup=keyboard)
-                    elif prev_type == "photo":
-                        await context.bot.send_photo(chat_id=channel_target, photo=prev_id, caption=caption, reply_markup=keyboard)
+                    if channel_target_raw.startswith("-100") or channel_target_raw.lstrip("-").isdigit():
+                        channel_chat_id = int(channel_target_raw)
                     else:
-                        await context.bot.send_document(chat_id=channel_target, document=prev_id, caption=caption, reply_markup=keyboard)
+                        channel_chat_id = channel_target_raw if channel_target_raw.startswith("@") else f"@{channel_target_raw}"
+
+                    if prev_type == "video":
+                        await context.bot.send_video(chat_id=channel_chat_id, video=prev_id, caption=caption, reply_markup=keyboard)
+                    elif prev_type == "photo":
+                        await context.bot.send_photo(chat_id=channel_chat_id, photo=prev_id, caption=caption, reply_markup=keyboard)
+                    else:
+                        await context.bot.send_document(chat_id=channel_chat_id, document=prev_id, caption=caption, reply_markup=keyboard)
                 except Exception as e:
                     print(f"Kanalga tashlashda xatolik: {e}")
 
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va saqlandi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":
@@ -255,9 +270,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_social_name":
             context.user_data["state"] = None
             url = context.user_data.get("temp_social_url", "")
-            channels.append({"url": url, "type": "social", "name": text})
-            save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
+            exists = any(c.get("url") == url for c in channels if isinstance(c, dict))
+            if not exists:
+                channels.append({"url": url, "type": "social", "name": text})
+                save_data("channels.json", channels)
+                await update.message.reply_text(f"✅ Ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
+            else:
+                await update.message.reply_text("⚠️ Bu havola allaqachon mavjud!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "set_start_text_input":
@@ -318,7 +337,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == "waiting_for_post_channel":
             context.user_data["state"] = None
-            vip_settings["channel_id"] = text
+            vip_settings["channel_id"] = text.strip()
             save_data("vip_settings.json", vip_settings)
             await update.message.reply_text(f"✅ Kinolar tashlanadigan kanal ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
             return

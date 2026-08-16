@@ -24,7 +24,6 @@ catalog = load_data("catalog.json", [])
 channels = load_data("channels.json", []) 
 admins = load_data("admins.json", [ADMIN_ID])
 
-# Kanal ID si to'g'ridan-to'g'ri o'rnatildi
 vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": "-1003932364635"})
 if not vip_settings.get("channel_id"):
     vip_settings["channel_id"] = "-1003932364635"
@@ -217,14 +216,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            # Kanalga avtomatik jo'natish
+            # Kanalga avtomatik jo'natish (Kodi bilan birga)
             channel_target_raw = vip_settings.get("channel_id", "-1003932364635").strip()
             if channel_target_raw:
                 try:
                     bot_info = await context.bot.get_me()
                     bot_username = bot_info.username
                     
-                    caption = f"🎬 {movie_title}\nBizning botimiz: 👈 @{bot_username} 👈\nMultfilmni korish uchun pastdagi tugmani bosing 👇👇"
+                    # Matn to'g'irlandi: takrorlanish olib tashlandi va kino kodi qo'shildi
+                    caption = f"🎬 {movie_title}\n📌 Kod: {new_code}\n\n🤖 Bizning bot: @{bot_username}\n👇 Ko'rish uchun quyidagi tugmani bosing:"
                     
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("▶️ Ko'rish uchun bosing", url=f"https://t.me/{bot_username}?start={new_code}")]

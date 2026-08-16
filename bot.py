@@ -5,7 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
-CHANNEL_ID = "-1003932364635" 
 
 def load_data(filename, default):
     if os.path.exists(filename):
@@ -65,7 +64,8 @@ async def check_telegram_subscription(bot, user_id, context=None):
         try:
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
-            if member.status in ["left", "kicked", "restricted"]:
+            # Yopiq kanallarda so'rov yuborganlar ham ruxsat olishi uchun 'restricted' yoki 'member' hamda 'creator', 'administrator' holatlari tekshiriladi
+            if member.status in ["left", "kicked"]:
                 return False
         except Exception as e:
             print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
@@ -131,7 +131,129 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
+    state = context.user_data.get("state")
 
+    # 1. Oldin admin holatlarini (state) to'liq tekshiramiz
+    if is_admin and state:
+        if state == "waiting_for_channel":
+            context.user_data["state"] = None
+            channels.append({"url": text, "type": "tg"})
+            save_data("channels.json", channels)
+            await update.message.reply_text(f"✅ Kanal ulandi: {text}")
+            return
+
+        elif state == "waiting_for_movie_file":
+            if not update.message.video and not update.message.document:
+                await update.message.reply_text("❌ Kinoni to'liq formatda yuboring!")
+                return
+            file_id = update.message.video.file_id if update.message.video else update.message.document.file_id
+            context.user_data["temp_movie_file_id"] = file_id
+            context.user_data["state"] = "waiting_for_movie_name"
+            await update.message.reply_text("✍️ Kinoning nomini yozing:")
+            return
+
+        elif state == "waiting_for_movie_name":
+            context.user_data["temp_movie_name"] = text
+            context.user_data["state"] = "waiting_for_movie_preview"
+            await update.message.reply_text("🖼 Tizer uchun rasm yoki video yuboring:")
+            return
+
+        elif state == "waiting_for_movie_preview":
+            file_id = context.user_data.get("temp_movie_file_id")
+            movie_name = context.user_data.get("temp_movie_name")
+            new_code = str(len(catalog) + 1)
+            
+            catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
+            save_data("catalog.json", catalog)
+            
+            context.user_data["state"] = None
+            await update.message.reply_text(f"✅ Kino qo'shildi!\n📌 Kod: {new_code}")
+            return
+
+        elif state == "waiting_for_ad":
+            context.user_data["state"] = None
+            count = 0
+            for uid in users:
+                try:
+                    await update.message.copy(chat_id=int(uid))
+                    count += 1
+                except:
+                    pass
+            await update.message.reply_text(f"✅ Reklama {count} ta odamga yuborildi!")
+            return
+
+        elif state == "waiting_for_social":
+            context.user_data["state"] = None
+            context.user_data["temp_social_url"] = text
+            context.user_data["state"] = "waiting_for_social_name"
+            await update.message.reply_text("🌐 Tarmoq nomini kiriting:")
+            return
+
+        elif state == "waiting_for_social_name":
+            context.user_data["state"] = None
+            url = context.user_data.get("temp_social_url", "")
+            channels.append({"url": url, "type": "social", "name": text})
+            save_data("channels.json", channels)
+            await update.message.reply_text(f"✅ Ulandi: {text}")
+            return
+
+        elif state == "set_start_text_input":
+            context.user_data["state"] = None
+            bot_texts["start"] = text
+            save_data("bot_texts.json", bot_texts)
+            await update.message.reply_text("✅ Start matni yangilandi!")
+            return
+
+        elif state == "set_sub_text_input":
+            context.user_data["state"] = None
+            bot_texts["sub"] = text
+            save_data("bot_texts.json", bot_texts)
+            await update.message.reply_text("✅ Obuna matni yangilandi!")
+            return
+
+        elif state == "set_not_found_text_input":
+            context.user_data["state"] = None
+            bot_texts["not_found"] = text
+            save_data("bot_texts.json", bot_texts)
+            await update.message.reply_text("✅ Topilmadi matni yangilandi!")
+            return
+
+        elif state == "set_vip_text_input":
+            context.user_data["state"] = None
+            bot_texts["vip_tariffs"] = text
+            save_data("bot_texts.json", bot_texts)
+            await update.message.reply_text("✅ VIP matni yangilandi!")
+            return
+
+        elif state == "waiting_for_search_id":
+            context.user_data["state"] = None
+            found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
+            if found:
+                await update.message.reply_video(video=found["file_id"], caption=f"🎬 {found['title']}\n📌 Kod: {found['code']}")
+            else:
+                await update.message.reply_text(bot_texts["not_found"])
+            return
+
+        elif state == "waiting_for_new_admin":
+            context.user_data["state"] = None
+            try:
+                new_id = int(text)
+                if new_id not in admins:
+                    admins.append(new_id)
+                    save_data("admins.json", admins)
+                    await update.message.reply_text("✅ Admin qo'shildi!")
+            except:
+                await update.message.reply_text("❌ Xato ID.")
+            return
+
+        elif state == "waiting_for_vip_card":
+            context.user_data["state"] = None
+            vip_settings["card"] = text
+            save_data("vip_settings.json", vip_settings)
+            await update.message.reply_text("✅ Karta yangilandi!")
+            return
+
+    # 2. Admin menyu tugmalari
     if is_admin:
         if text == "🎬 Kino boshqaruvi":
             context.user_data["state"] = None
@@ -211,6 +333,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🔍 Kino kodini kiriting:")
             return
 
+    # 3. Oddiy foydalanuvchi obuna tekshiruvi
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id, context)
         if not is_subbed:
@@ -218,7 +341,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     user_id_str = str(user_id)
-    state = context.user_data.get("state")
 
     if text == "🎁 Referal":
         bot_info = await context.bot.get_me()
@@ -265,125 +387,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Chekingiz adminga yuborildi! Tez orada tekshirib tasdiqlashadi.")
         return
 
-    if is_admin:
-        if state == "waiting_for_movie_file":
-            if not update.message.video and not update.message.document:
-                await update.message.reply_text("❌ Kinoni to'liq formatda yuboring!")
-                return
-            file_id = update.message.video.file_id if update.message.video else update.message.document.file_id
-            context.user_data["temp_movie_file_id"] = file_id
-            context.user_data["state"] = "waiting_for_movie_name"
-            await update.message.reply_text("✍️ Kinoning nomini yozing:")
-            return
-
-        elif state == "waiting_for_movie_name":
-            context.user_data["temp_movie_name"] = text
-            context.user_data["state"] = "waiting_for_movie_preview"
-            await update.message.reply_text("🖼 Tizer uchun rasm yoki video yuboring:")
-            return
-
-        elif state == "waiting_for_movie_preview":
-            file_id = context.user_data.get("temp_movie_file_id")
-            movie_name = context.user_data.get("temp_movie_name")
-            new_code = str(len(catalog) + 1)
-            
-            catalog.append({"code": new_code, "title": movie_name, "file_id": file_id})
-            save_data("catalog.json", catalog)
-            
-            context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino qo'shildi!\n📌 Kod: {new_code}")
-            return
-
-        if state == "waiting_for_ad":
-            context.user_data["state"] = None
-            count = 0
-            for uid in users:
-                try:
-                    await update.message.copy(chat_id=int(uid))
-                    count += 1
-                except:
-                    pass
-            await update.message.reply_text(f"✅ Reklama {count} ta odamga yuborildi!")
-            return
-
-        elif state == "waiting_for_channel":
-            context.user_data["state"] = None
-            channels.append({"url": text, "type": "tg"})
-            save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Kanal ulandi: {text}")
-            return
-
-        elif state == "waiting_for_social":
-            context.user_data["state"] = None
-            context.user_data["temp_social_url"] = text
-            context.user_data["state"] = "waiting_for_social_name"
-            await update.message.reply_text("🌐 Tarmoq nomini kiriting:")
-            return
-
-        elif state == "waiting_for_social_name":
-            context.user_data["state"] = None
-            url = context.user_data.get("temp_social_url", "")
-            channels.append({"url": url, "type": "social", "name": text})
-            save_data("channels.json", channels)
-            await update.message.reply_text(f"✅ Ulandi: {text}")
-            return
-
-        elif state == "set_start_text_input":
-            context.user_data["state"] = None
-            bot_texts["start"] = text
-            save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Start matni yangilandi!")
-            return
-
-        elif state == "set_sub_text_input":
-            context.user_data["state"] = None
-            bot_texts["sub"] = text
-            save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Obuna matni yangilandi!")
-            return
-
-        elif state == "set_not_found_text_input":
-            context.user_data["state"] = None
-            bot_texts["not_found"] = text
-            save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ Topilmadi matni yangilandi!")
-            return
-
-        elif state == "set_vip_text_input":
-            context.user_data["state"] = None
-            bot_texts["vip_tariffs"] = text
-            save_data("bot_texts.json", bot_texts)
-            await update.message.reply_text("✅ VIP matni yangilandi!")
-            return
-
-        elif state == "waiting_for_search_id":
-            context.user_data["state"] = None
-            found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
-            if found:
-                await update.message.reply_video(video=found["file_id"], caption=f"🎬 {found['title']}\n📌 Kod: {found['code']}")
-            else:
-                await update.message.reply_text(bot_texts["not_found"])
-            return
-
-        elif state == "waiting_for_new_admin":
-            context.user_data["state"] = None
-            try:
-                new_id = int(text)
-                if new_id not in admins:
-                    admins.append(new_id)
-                    save_data("admins.json", admins)
-                    await update.message.reply_text("✅ Admin qo'shildi!")
-            except:
-                await update.message.reply_text("❌ Xato ID.")
-            return
-
-        elif state == "waiting_for_vip_card":
-            context.user_data["state"] = None
-            vip_settings["card"] = text
-            save_data("vip_settings.json", vip_settings)
-            await update.message.reply_text("✅ Karta yangilandi!")
-            return
-
+    # 4. Kino kodini qidirish
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
     
     if found_movie:
@@ -407,7 +411,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz yoki so'rovingiz tasdiqlanmadi!", show_alert=True)
         return
 
     if data.startswith("vip_"):
@@ -486,7 +490,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data("channels.json", channels)
             rem_url = removed.get("url", str(removed)) if isinstance(removed, dict) else str(removed)
             
-            # Yangilangan kanal ro'yxatini to'g'ri chiqarish
             if not channels:
                 await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n❌ Hozircha ulangan kanallar yo'q.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
             else:

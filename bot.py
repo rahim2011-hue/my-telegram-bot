@@ -5,8 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
-
-# 📌 Kanal ID raqamingiz:
 CHANNEL_ID = "-1003932364635" 
 
 def load_data(filename, default):
@@ -378,20 +376,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
-    # Oddiy foydalanuvchi biror narsa yozsa, har safar obunani tekshiramiz:
+    # 1. Avval obunani tekshiramiz (agar obunadan chiqib ketgan bo'lsa, to'xtatib obuna so'raydi)
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:
             await send_subscription_required(update, context)
             return
 
-    # Kinoni kod bo'yicha aniq topish (bo'sh joylarsiz solishtirish)
-    found_movie = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
+    # 2. Kinoni bazadan aniq qidirish (kod har xil formatda saqlangan bo'lsa ham topadi)
+    found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
+    
     if found_movie:
-        await update.message.reply_video(video=found_movie["file_id"], caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}")
+        await update.message.reply_video(
+            video=found_movie["file_id"], 
+            caption=f"🎬 {found_movie.get('title')}\n📌 Kod: {found_movie.get('code')}"
+        )
     else:
-        if not is_admin:
-            await update.message.reply_text(bot_texts["not_found"])
+        await update.message.reply_text(bot_texts["not_found"])
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

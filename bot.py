@@ -57,10 +57,6 @@ async def check_telegram_subscription(bot, user_id, context=None):
     if not tg_channels:
         return True
 
-    # Tezlik uchun bir marta tekshirilsa, context'ga yozib qo'yamiz
-    if context and context.user_data.get("is_subbed") == True:
-        return True
-
     for ch in tg_channels:
         url = ch.get("url", "")
         clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
@@ -70,15 +66,11 @@ async def check_telegram_subscription(bot, user_id, context=None):
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
             if member.status in ["left", "kicked", "restricted"]:
-                if context:
-                    context.user_data["is_subbed"] = False
                 return False
         except Exception as e:
             print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
             return False
             
-    if context:
-        context.user_data["is_subbed"] = True
     return True
 
 async def send_subscription_required(update_or_query, context):
@@ -109,7 +101,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = str(user.id)
     context.user_data["state"] = None
-    context.user_data["is_subbed"] = None
     
     if user_id not in users:
         users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
@@ -141,7 +132,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
 
-    # Admin menyu tugmalari bosilganda holatni darhol tozalash va to'g'ri yo'naltirish
     if is_admin:
         if text == "🎬 Kino boshqaruvi":
             context.user_data["state"] = None
@@ -221,7 +211,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🔍 Kino kodini kiriting:")
             return
 
-    # Oddiy foydalanuvchi yoki admin obuna tekshiruvi
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id, context)
         if not is_subbed:
@@ -416,10 +405,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await check_telegram_subscription(context.bot, user_id, context):
             try: await query.message.delete()
             except: pass
-            context.user_data["is_subbed"] = True
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            context.user_data["is_subbed"] = False
             await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
         return
 
@@ -498,7 +485,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             removed = channels.pop(idx)
             save_data("channels.json", channels)
             rem_url = removed.get("url", str(removed)) if isinstance(removed, dict) else str(removed)
-            await query.message.edit_text(f"✅ O'chirildi: {rem_url}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+            
+            # Yangilangan kanal ro'yxatini to'g'ri chiqarish
+            if not channels:
+                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n❌ Hozircha ulangan kanallar yo'q.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+            else:
+                keyboard = []
+                for index, ch in enumerate(channels):
+                    url = ch.get("url", str(ch)) if isinstance(ch, dict) else str(ch)
+                    keyboard.append([InlineKeyboardButton(f"❌ O'chirish: {url}", callback_data=f"del_ch_{index}")])
+                keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")])
+                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n🗑 O'chirmoqchi bo'lgan boshqa kanalni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "list_channels":
         ch_list = "\n".join([f"{i+1}. {c.get('url', str(c))} ({c.get('type', 'tg')})" for i, c in enumerate(channels)]) if channels else "Hozircha yo'q."

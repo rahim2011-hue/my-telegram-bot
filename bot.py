@@ -189,26 +189,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == "waiting_for_movie_name":
-            context.user_data["temp_movie_name"] = text
+            movie_title = text
             new_code = str(len(catalog) + 1)
             file_id = context.user_data.get("temp_movie_file_id")
             prev_id = context.user_data.get("temp_preview_id")
             prev_type = context.user_data.get("temp_preview_type")
             
-            catalog.append({
+            new_movie_item = {
                 "code": new_code, 
-                "title": text, 
+                "title": movie_title, 
                 "file_id": file_id,
                 "preview_id": prev_id,
                 "preview_type": prev_type
-            })
+            }
+            
+            catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            # Kinoni avtomatik kanalga tashlash (agar VIP kanal yoki asosiy kanal sozlangan bo'lsa)
             channel_target = vip_settings.get("channel_id", "")
             if channel_target:
                 try:
-                    caption = f"🎬 {text}\nBizning botimiz: 👈 @{context.bot.username} 👈"
+                    bot_username = context.bot.username
+                    caption = f"🎬 {movie_title}\nBizning botimiz: 👈 @{bot_username} 👈"
                     if prev_type == "video":
                         await context.bot.send_video(chat_id=channel_target, video=prev_id, caption=caption)
                     elif prev_type == "photo":
@@ -219,7 +221,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     print(f"Kanalga tashlashda xatolik: {e}")
 
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va saqlandi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":

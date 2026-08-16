@@ -27,7 +27,7 @@ admins = load_data("admins.json", [ADMIN_ID])
 vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000"})
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
-    "sub": "⚠️ Botimizdan foydalanish uchun quyidagi kanallarga obuna bo'ling:",
+    "sub": "⚠️ Botimizdan foydalanish uchun quyidagi Telegram kanallarga obuna bo'ling:",
     "not_found": "❌ Bunday kodli kino topilmadi.",
     "vip_tariffs": "💎 VIP obuna orqali barcha cheklovlarni olib tashlang!"
 })
@@ -47,24 +47,32 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
 ], resize_keyboard=True)
 
 async def check_telegram_subscription(bot, user_id):
-    if not channels:
+    # Faqat "tg" turidagi kanallarni filtrlab olamiz
+    tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
+    
+    if not tg_channels:
         return True
-    # VIP foydalanuvchilar obuna tekshiruvidan o'tadi yoki o'tmaydi (sizning xohishingizga ko'ra, lekin oddiy userlar uchun shart)
+        
     if str(user_id) in users and users.get(str(user_id), {}).get("vip", False):
         return True
 
-    for ch in channels:
-        if isinstance(ch, dict) and ch.get("type", "tg") == "tg":
-            url = ch.get("url", "")
-            clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
-            if not clean_ch:
-                continue
-            try:
-                member = await bot.get_chat_member(chat_id=f"@{clean_ch}", user_id=user_id)
-                if member.status in ["left", "kicked"]:
-                    return False
-            except:
-                continue
+    for ch in tg_channels:
+        url = ch.get("url", "")
+        clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
+        if not clean_ch:
+            continue
+        try:
+            # Agar havolada raqamlar bo'lsa (masalan -100...) chat_id sifatida tekshiramiz
+            chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
+            member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
+            # Agar foydalanuvchi kanalda bo'lmasa
+            if member.status in ["left", "kicked"]:
+                return False
+        except Exception as e:
+            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
+            # Xatolik chiqqan taqdirda ham xavfsizlik uchun obuna yo'q deb hisoblaymiz
+            return False
+            
     return True
 
 async def send_subscription_required(update_or_query, context):
@@ -75,18 +83,24 @@ async def send_subscription_required(update_or_query, context):
     for ch in channels:
         if not isinstance(ch, dict):
             continue
+        # Ijtimoiy tarmoqlar majburiy bo'lmagani uchun shunchaki havolali tugma qilib qo'shamiz
         if ch.get("type") == "social":
             keyboard_buttons.append([InlineKeyboardButton(f"🌐 {ch.get('name', 'Link')}", url=ch.get("url", "https://t.me"))])
         else:
+            # Telegram kanallar esa majburiy obuna sifatida chiqadi
             url = ch.get("url", "")
             clean_ch = url.replace("https://t.me/", "").replace("@", "").strip()
             if clean_ch:
-                keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=f"https://t.me/{clean_ch}")])
+                channel_link = f"https://t.me/{clean_ch}" if not clean_ch.startswith("-") else url
+                keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=channel_link)])
     
     keyboard_buttons.append([InlineKeyboardButton("💎 VIP obuna sotib olish", callback_data="buy_vip")])
     keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub")])
     
-    await message.reply_text(bot_texts["sub"], reply_markup=InlineKeyboardMarkup(keyboard_buttons))
+    try:
+        await message.reply_text(bot_texts["sub"], reply_markup=InlineKeyboardMarkup(keyboard_buttons))
+    except:
+        pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -124,7 +138,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
-    # 1. Agar foydalanuvchi admin bo'lmasa, HAR QANDAY xatoda avval obunani tekshiramiz!
+    # Admin bo'lmasa, har safar har qanday xabar yozganda obunani qat'iy tekshiramiz
     if not is_admin:
         is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:
@@ -386,7 +400,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta raqami yangilandi!")
             return
 
-    # Kinoni bazadan qidirish
+    # Kinoni qidirish
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
     
     if found_movie:
@@ -410,7 +424,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+            await query.answer("❌ Hali barcha Telegram kanallarga obuna bo'lmadingiz!", show_alert=True)
         return
 
     if data.startswith("vip_"):
@@ -494,8 +508,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Xatolik!")
 
     elif data == "list_channels":
-        ch_list = "\n".join([f"{i+1}. {c.get('url', str(c))}" for i, c in enumerate(channels)]) if channels else "Hozircha yo'q."
-        await query.message.edit_text(f"📋 Ulangan kanallar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        ch_list = "\n".join([f"{i+1}. {c.get('url', str(c))} ({c.get('type', 'tg')})" for i, c in enumerate(channels)]) if channels else "Hozircha yo'q."
+        await query.message.edit_text(f"📋 Ulangan kanallar va havolalar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
 
     elif data == "set_start_text":
         context.user_data["state"] = "set_start_text_input"

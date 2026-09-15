@@ -38,11 +38,11 @@ bot_texts = load_data("bot_texts.json", {
 })
 
 ADMIN_KEYBOARD = ReplyKeyboardMarkup([
-    [KeyboardButton("📊 Statistika"), KeyboardButton("🎬 Kino boshqaruvi")],
+    [KeyboardButton("🎬 Kino boshqaruvi"), KeyboardButton("📊 Statistika")],
     [KeyboardButton("🎁 Referal"), KeyboardButton("📢 Majburiy obuna")],
-    [KeyboardButton("👥 Foydalanuvchilar"), KeyboardButton("👮‍♂️ Adminlar")],
+    [KeyboardButton("👮‍♂️ Adminlar"), KeyboardButton("👥 Foydalanuvchilar")],
     [KeyboardButton("📢 Reklama"), KeyboardButton("💎 VIP boshqaruv")],
-    [KeyboardButton("🔍 Foydalanuvchi qidirish"), KeyboardButton("ℹ️ Sozlamalar")]
+    [KeyboardButton("ℹ️ Sozlamalar"), KeyboardButton("🔍 ID qidirish")]
 ], resize_keyboard=True)
 
 USER_KEYBOARD = ReplyKeyboardMarkup([
@@ -122,7 +122,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_data("users.json", users)
     else:
-        # Username yangilanib turishi uchun
         users[user_id]["username"] = user.username or ""
         users[user_id]["name"] = user.full_name
         save_data("users.json", users)
@@ -175,7 +174,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_menu_buttons = [
         "📊 Statistika", "🎬 Kino boshqaruvi", "🎁 Referal", 
         "📢 Majburiy obuna", "👥 Foydalanuvchilar", "👮‍♂️ Adminlar", 
-        "📢 Reklama", "💎 VIP boshqaruv", "🔍 Foydalanuvchi qidirish", "ℹ️ Sozlamalar"
+        "📢 Reklama", "💎 VIP boshqaruv", "🔍 ID qidirish", "ℹ️ Sozlamalar"
     ]
     
     if is_admin and text in admin_menu_buttons:
@@ -488,7 +487,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📢 Reklama postini yuboring:")
             return
 
-        elif text == "🔍 Foydalanuvchi qidirish":
+        elif text == "🔍 ID qidirish":
             context.user_data["state"] = "waiting_for_user_search"
             await update.message.reply_text("🔍 Qidirilayotgan foydalanuvchining **ID raqami** yoki **username**'ini yuboring:", parse_mode="Markdown")
             return
@@ -640,7 +639,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         action = data.split("_")[0]
         if action == "approve":
             if target_uid in users:
-                users[target_uid]["vip"] = time.time() + (30 * 86400) # Chek orqali 30 kun beriladi
+                users[target_uid]["vip"] = time.time() + (30 * 86400)
                 save_data("users.json", users)
             try:
                 await context.bot.send_message(chat_id=int(target_uid), text="🎉 Tabriklaymiz! 1 oylik VIP obunangiz tasdiqlandi! ✅", reply_markup=USER_KEYBOARD)

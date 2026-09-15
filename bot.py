@@ -69,10 +69,12 @@ async def check_telegram_subscription(bot, user_id, context=None):
         try:
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
+            # Agar foydalanuvchi tark etgan bo'kick qilingan bo'lsa
             if member.status in ["left", "kicked"]:
                 return False
         except Exception as e:
-            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
+            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}. Bot kanalga admin qilinganligiga ishonch hosil qiling!")
+            # Agar bot kanalga admin bo'lmasa xato beradi, shuning uchun xavfsizlik uchun False qaytaramiz
             return False
             
     return True
@@ -94,7 +96,6 @@ async def send_subscription_required(update_or_query, context, pending_code=None
                 channel_link = f"https://t.me/{clean_ch}" if not clean_ch.startswith("-") else url
                 keyboard_buttons.append([InlineKeyboardButton("📢 Kanalga obuna bo'lish", url=channel_link)])
     
-    # Qaysi kino kodi bilan kelgan bo'lsa, tekshiruv tugmasiga saqlab qo'yamiz
     cb_data = f"check_sub_{pending_code}" if pending_code else "check_sub"
     keyboard_buttons.append([InlineKeyboardButton("✅ Obunani tekshirish", callback_data=cb_data)])
     
@@ -114,7 +115,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_admin = (user.id in admins or user.id == ADMIN_ID)
 
-    # Agar startda kod bilan kelgan bo'lsa (masalan: /start 1)
     pending_code = None
     if context.args:
         arg = context.args[0].strip()
@@ -137,7 +137,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👋 Xush kelibsiz, Hurmatli Admin!", reply_markup=ADMIN_KEYBOARD)
         return
 
-    # Agar obuna bo'lgan bo'lsa va kod bilan kirgan bo'lsa, darhol kinoni tashlaymiz
     if pending_code:
         found_movie = next((item for item in catalog if str(item.get("code")).strip() == pending_code), None)
         if found_movie:
@@ -177,7 +176,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not exists:
                 channels.append({"url": clean_new_ch, "type": "tg"})
                 save_data("channels.json", channels)
-                await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {clean_new_ch}", reply_markup=ADMIN_KEYBOARD)
+                await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {clean_new_ch}\n\n⚠️ ESLATMA: Bot obunani tekshira olishi uchun ushbu kanalga ADMINISTRATOR qilib qo'yilishi shart!", reply_markup=ADMIN_KEYBOARD)
             else:
                 await update.message.reply_text("⚠️ Bu kanal allaqachon qo'shilgan!", reply_markup=ADMIN_KEYBOARD)
             return
@@ -238,7 +237,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            # Kanalga avtomatik jo'natish (Kodi bilan birga)
             channel_target_raw = vip_settings.get("channel_id", "-1003932364635").strip()
             if channel_target_raw:
                 try:
@@ -512,7 +510,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try: await query.message.delete()
             except: pass
             
-            # Agar tekshirish tugmasida kino kodi ham biriktirilgan bo'lsa (masalan: check_sub_1)
             parts = data.split("_")
             if len(parts) > 2:
                 movie_code = parts[2]
@@ -528,7 +525,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+            await query.answer("❌ Hali kanallarga obuna bo'lmagansiz yoki bot kanalga admin qilinmagan!", show_alert=True)
         return
 
     if data.startswith("vip_"):

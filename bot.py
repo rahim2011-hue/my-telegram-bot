@@ -72,7 +72,7 @@ async def check_telegram_subscription(bot, user_id, context=None):
             if member.status in ["left", "kicked"]:
                 return False
         except Exception as e:
-            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}. Bot kanalga admin qilinganligiga ishonch hosil qiling!")
+            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
             return False
             
     return True
@@ -175,7 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not exists:
                 channels.append({"url": clean_new_ch, "type": "tg"})
                 save_data("channels.json", channels)
-                await update.message.reply_text(f"✅ Kanal ulandi: {clean_new_ch}\n\n⚠️ Botni kanalga ADMIN qiling!", reply_markup=ADMIN_KEYBOARD)
+                await update.message.reply_text(f"✅ Kanal ulandi: {clean_new_ch}", reply_markup=ADMIN_KEYBOARD)
             else:
                 await update.message.reply_text("⚠️ Bu kanal allaqachon qo'shilgan!", reply_markup=ADMIN_KEYBOARD)
             return
@@ -242,17 +242,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     bot_info = await context.bot.get_me()
                     bot_username = bot_info.username
-                    
                     caption = f"🎬 {movie_title}\n📌 Kod: {new_code}\n\n🤖 Bizning bot: @{bot_username}\n👇 Ko'rish uchun quyidagi tugmani bosing:"
-                    
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("▶️ Ko'rish uchun bosing", url=f"https://t.me/{bot_username}?start={new_code}")]
                     ])
-
-                    if channel_target_raw.startswith("-100") or channel_target_raw.lstrip("-").isdigit():
-                        channel_chat_id = int(channel_target_raw)
-                    else:
-                        channel_chat_id = channel_target_raw if channel_target_raw.startswith("@") else f"@{channel_target_raw}"
+                    channel_chat_id = int(channel_target_raw) if channel_target_raw.startswith("-100") or channel_target_raw.lstrip("-").isdigit() else (channel_target_raw if channel_target_raw.startswith("@") else f"@{channel_target_raw}")
 
                     if prev_type == "video":
                         await context.bot.send_video(chat_id=channel_chat_id, video=prev_id, caption=caption, reply_markup=keyboard)
@@ -280,9 +274,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif state == "waiting_for_social":
-            context.user_data["state"] = None
-            context.user_data["temp_social_url"] = text
             context.user_data["state"] = "waiting_for_social_name"
+            context.user_data["temp_social_url"] = text
             await update.message.reply_text("🌐 Tarmoq nomini kiriting:")
             return
 
@@ -470,7 +463,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"👤 Profil:\n🆔 ID: {user_id}\n👤 Ism: {update.effective_user.full_name}\n💎 VIP: {'Ha ✅' if is_vip else 'Yo\'q ❌'}")
         return
     elif text == "📞 Aloqa":
-        await update.message.reply_text("📞 Admin bilan bog'lanish uchun: @proactive_11")
+        await update.message.reply_text("📞 Admin bilan bog'lanish uchun admin bilan aloqaga chiqing.")
         return
 
     if not is_admin and update.message.photo and state == "waiting_for_vip_check":
@@ -528,7 +521,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali kanallarga obuna bo'lmagansiz yoki bot kanalga admin qilinmagan!", show_alert=True)
+            await query.answer("❌ Hali kanallarga obuna bo'lmagansiz!", show_alert=True)
         return
 
     if data.startswith("vip_"):
@@ -641,6 +634,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["state"] = "waiting_for_post_channel"
         await query.message.edit_text("📢 Kinolar avtomatik tashlanadigan kanal username yoki ID sini kiriting:", parse_mode="Markdown")
 
+    elif data == "change_vip_card":
+        context.user_data["state"] = "waiting_for_vip_card"
+        await query.message.edit_text("💳 Yangi karta raqamini yuboring:", parse_mode="Markdown")
+
+    elif data == "add_admin":
+        context.user_data["state"] = "waiting_for_new_admin"
+        await query.message.edit_text("👮‍♂️ Yangi adminning Telegram ID raqamini yuboring:")
+
+    elif data == "list_admins":
+        admin_list = "\n".join([str(a) for a in admins])
+        await query.message.edit_text(f"👮‍♂️ Adminlar ro'yxati:\n\n{admin_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+
     elif data == "add_movie":
         context.user_data["state"] = "waiting_for_movie_file"
         await query.message.edit_text("🎬 Kinoni yuboring:")
@@ -664,17 +669,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(catalog) < initial_len:
             save_data("catalog.json", catalog)
             await query.message.edit_text("✅ Kino o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
-
-    elif data == "add_admin":
-        context.user_data["state"] = "waiting_for_new_admin"
-        await query.message.edit_text("👮‍♂️ Admin ID raqamini yuboring:")
-
-    elif data == "list_admins":
-        await query.message.edit_text(f"📋 Adminlar ID: {', '.join(map(str, admins))}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
-
-    elif data == "change_vip_card":
-        context.user_data["state"] = "waiting_for_vip_card"
-        await query.message.edit_text("💳 Yangi karta raqamini kiriting:")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()

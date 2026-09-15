@@ -4,7 +4,7 @@ import time
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-TOKEN = "8970384329:AAF5QGTZ5CaxHyeGaVmBFJOjE2mhKV8ICGc"
+TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
 
 def load_data(filename, default):
@@ -25,7 +25,13 @@ catalog = load_data("catalog.json", [])
 channels = load_data("channels.json", []) 
 admins = load_data("admins.json", [ADMIN_ID])
 
-vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": "-1003932364635"})
+vip_settings = load_data("vip_settings.json", {
+    "card": "8600 0000 0000 0000", 
+    "channel_id": "-1003932364635",
+    "price_1m": "10,000 so'm",
+    "price_3m": "25,000 so'm",
+    "price_life": "50,000 so'm"
+})
 if not vip_settings.get("channel_id"):
     vip_settings["channel_id"] = "-1003932364635"
     save_data("vip_settings.json", vip_settings)
@@ -37,12 +43,13 @@ bot_texts = load_data("bot_texts.json", {
     "vip_tariffs": "💎 VIP obuna orqali barcha cheklovlarni olib tashlang!"
 })
 
+# Tugmalar tartibi siz xohlagandek va chiroyli chiqishi uchun moslandi
 ADMIN_KEYBOARD = ReplyKeyboardMarkup([
-    [KeyboardButton("🎬 Kino boshqaruvi"), KeyboardButton("📊 Statistika")],
-    [KeyboardButton("🎁 Referal"), KeyboardButton("📢 Majburiy obuna")],
-    [KeyboardButton("👮‍♂️ Adminlar"), KeyboardButton("👥 Foydalanuvchilar")],
-    [KeyboardButton("📢 Reklama"), KeyboardButton("💎 VIP boshqaruv")],
-    [KeyboardButton("ℹ️ Sozlamalar"), KeyboardButton("🔍 ID qidirish")]
+    [KeyboardButton("📊 Statistika"), KeyboardButton("🎬 Kino boshqaruvi")],
+    [KeyboardButton("📢 Majburiy obuna"), KeyboardButton("🎁 Referal")],
+    [KeyboardButton("👥 Foydalanuvchilar"), KeyboardButton("👮‍♂️ Adminlar")],
+    [KeyboardButton("💎 VIP boshqaruv"), KeyboardButton("📢 Reklama")],
+    [KeyboardButton("🔍 ID qidirish"), KeyboardButton("ℹ️ Sozlamalar")]
 ], resize_keyboard=True)
 
 USER_KEYBOARD = ReplyKeyboardMarkup([
@@ -412,6 +419,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Karta yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
+        elif state == "waiting_for_vip_price_1":
+            context.user_data["state"] = None
+            vip_settings["price_1m"] = text
+            save_data("vip_settings.json", vip_settings)
+            await update.message.reply_text("✅ 1 oylik VIP narxi yangilandi!", reply_markup=ADMIN_KEYBOARD)
+            return
+
+        elif state == "waiting_for_vip_price_3":
+            context.user_data["state"] = None
+            vip_settings["price_3m"] = text
+            save_data("vip_settings.json", vip_settings)
+            await update.message.reply_text("✅ 3 oylik VIP narxi yangilandi!", reply_markup=ADMIN_KEYBOARD)
+            return
+
+        elif state == "waiting_for_vip_price_life":
+            context.user_data["state"] = None
+            vip_settings["price_life"] = text
+            save_data("vip_settings.json", vip_settings)
+            await update.message.reply_text("✅ Doimiy VIP narxi yangilandi!", reply_markup=ADMIN_KEYBOARD)
+            return
+
         elif state == "waiting_for_post_channel":
             context.user_data["state"] = None
             vip_settings["channel_id"] = text.strip()
@@ -471,11 +499,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "💎 VIP boshqaruv":
+            # VIP boshqaruv menyusiga yangi funksiyalar qo'shildi
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
+                [InlineKeyboardButton("💰 1 oylik narxini o'zgartirish", callback_data="change_price_1")],
+                [InlineKeyboardButton("💰 3 oylik narxini o'zgartirish", callback_data="change_price_3")],
+                [InlineKeyboardButton("💰 Doimiy narxini o'zgartirish", callback_data="change_price_life")],
                 [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
             ])
-            await update.message.reply_text(f"💳 Hozirgi karta: {vip_settings['card']}", reply_markup=keyboard)
+            vip_info = (
+                f"💎 **VIP Boshqaruv paneli:**\n\n"
+                f"💳 Karta: `{vip_settings.get('card')}`\n"
+                f"💵 1 oylik: {vip_settings.get('price_1m')}\n"
+                f"💵 3 oylik: {vip_settings.get('price_3m')}\n"
+                f"💵 Doimiy: {vip_settings.get('price_life')}"
+            )
+            await update.message.reply_text(vip_info, parse_mode="Markdown", reply_markup=keyboard)
             return
 
         elif text == "📊 Statistika":
@@ -524,11 +563,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             status_text = "Sizda hozircha VIP status yo'q ❌"
 
+        p1 = vip_settings.get("price_1m", "10,000 so'm")
+        p3 = vip_settings.get("price_3m", "25,000 so'm")
+        pl = vip_settings.get("price_life", "50,000 so'm")
+
         vip_text = f"{bot_texts['vip_tariffs']}\n\nHolatingiz: {status_text}\n\nQuyidagi tariflardan birini tanlang:"
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("1 oylik - 10,000 so'm", callback_data="vip_1")],
-            [InlineKeyboardButton("3 oylik - 25,000 so'm", callback_data="vip_3")],
-            [InlineKeyboardButton("Doimiy - 50,000 so'm", callback_data="vip_life")],
+            [InlineKeyboardButton(f"1 oylik - {p1}", callback_data="vip_1")],
+            [InlineKeyboardButton(f"3 oylik - {p3}", callback_data="vip_3")],
+            [InlineKeyboardButton(f"Doimiy - {pl}", callback_data="vip_life")],
             [InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_menu")]
         ])
         await update.message.reply_text(vip_text, reply_markup=keyboard)
@@ -733,6 +776,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "change_vip_card":
         context.user_data["state"] = "waiting_for_vip_card"
         await query.message.edit_text("💳 Yangi karta raqamini yuboring:", parse_mode="Markdown")
+
+    elif data == "change_price_1":
+        context.user_data["state"] = "waiting_for_vip_price_1"
+        await query.message.edit_text("💰 1 oylik VIP uchun yangi narxni yuboring (masalan: 15,000 so'm):")
+
+    elif data == "change_price_3":
+        context.user_data["state"] = "waiting_for_vip_price_3"
+        await query.message.edit_text("💰 3 oylik VIP uchun yangi narxni yuboring:")
+
+    elif data == "change_price_life":
+        context.user_data["state"] = "waiting_for_vip_price_life"
+        await query.message.edit_text("💰 Doimiy VIP uchun yangi narxni yuboring:")
 
     elif data == "add_admin":
         context.user_data["state"] = "waiting_for_new_admin"

@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
@@ -41,7 +42,7 @@ ADMIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("🎁 Referal"), KeyboardButton("📢 Majburiy obuna")],
     [KeyboardButton("👥 Foydalanuvchilar"), KeyboardButton("👮‍♂️ Adminlar")],
     [KeyboardButton("📢 Reklama"), KeyboardButton("💎 VIP boshqaruv")],
-    [KeyboardButton("🔍 ID qidirish"), KeyboardButton("ℹ️ Sozlamalar")]
+    [KeyboardButton("🔍 Foydalanuvchi qidirish"), KeyboardButton("ℹ️ Sozlamalar")]
 ], resize_keyboard=True)
 
 USER_KEYBOARD = ReplyKeyboardMarkup([
@@ -54,8 +55,13 @@ async def check_telegram_subscription(bot, user_id, context=None):
     if user_id == ADMIN_ID or user_id in admins:
         return True
 
-    if str(user_id) in users and users.get(str(user_id), {}).get("vip", False):
-        return True
+    user_str = str(user_id)
+    if user_str in users:
+        vip_data = users[user_str].get("vip", False)
+        if isinstance(vip_data, (int, float)) and vip_data > time.time():
+            return True
+        elif vip_data is True:
+            return True
 
     tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
     if not tg_channels:
@@ -108,7 +114,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["state"] = None
     
     if user_id not in users:
-        users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
+        users[user_id] = {
+            "name": user.full_name, 
+            "username": user.username or "", 
+            "vip": False, 
+            "referrals": []
+        }
+        save_data("users.json", users)
+    else:
+        # Username yangilanib turishi uchun
+        users[user_id]["username"] = user.username or ""
+        users[user_id]["name"] = user.full_name
         save_data("users.json", users)
 
     is_admin = (user.id in admins or user.id == ADMIN_ID)
@@ -159,7 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_menu_buttons = [
         "📊 Statistika", "🎬 Kino boshqaruvi", "🎁 Referal", 
         "📢 Majburiy obuna", "👥 Foydalanuvchilar", "👮‍♂️ Adminlar", 
-        "📢 Reklama", "💎 VIP boshqaruv", "🔍 ID qidirish", "ℹ️ Sozlamalar"
+        "📢 Reklama", "💎 VIP boshqaruv", "🔍 Foydalanuvchi qidirish", "ℹ️ Sozlamalar"
     ]
     
     if is_admin and text in admin_menu_buttons:
@@ -319,14 +335,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ VIP matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
-        elif state == "waiting_for_search_id":
+        elif state == "waiting_for_user_search":
             context.user_data["state"] = None
-            found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
-            if found:
-                f_id = found.get("file_id") or found.get("video_file_id")
-                await update.message.reply_video(video=f_id, caption=f"🎬 {found.get('title')}\n📌 Kod: {found.get('code')}")
-            else:
-                await update.message.reply_text(bot_texts["not_found"])
+            query_val = text.strip().lstrip("@")
+            found_uid = None
+            
+            for uid, info in users.items():
+                if uid == query_val or info.get("username", "").lower() == query_val.lower():
+                    found_uid = uid
+                    break
+            
+            if not found_uid:
+                await update.message.reply_text("❌ Bunday foydalanuvchi topilmadi!", reply_markup=ADMIN_KEYBOARD)
+                return
+
+            u_info = users[found_uid]
+            vip_val = u_info.get("vip", False)
+            
+            vip_status_str = "Yo'q ❌"
+            if isinstance(vip_val, (int, float)):
+                if vip_val > time.time():
+                    rem_days = int((vip_val - time.time()) / 86400)
+                    vip_status_str = f"Mavjud ✅ ({rem_days} kun qoldi)"
+                else:
+                    vip_status_str = "Muddati tugagan ⏳"
+            elif vip_val is True:
+                vip_status_str = "Mavjud ✅ (Doimiy)"
+
+            info_text = (
+                f"👤 **Foydalanuvchi ma'lumotlari:**\n"
+                f"🆔 ID: `{found_uid}`\n"
+                f"👤 Ism: {u_info.get('name', 'Noma\'lum')}\n"
+                f"🔗 Username: @{u_info.get('username', 'yoq')}\n"
+                f"💎 VIP status: {vip_status_str}"
+            )
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ VIP berish (kunlarda)", callback_data=f"give_vip_days_{found_uid}")],
+                [InlineKeyboardButton("🗑 VIP olib tashlash", callback_data=f"remove_vip_{found_uid}")]
+            ])
+            await update.message.reply_text(info_text, parse_mode="Markdown", reply_markup=keyboard)
+            return
+
+        elif state == "waiting_for_vip_days":
+            target_uid = context.user_data.get("target_vip_uid")
+            context.user_data["state"] = None
+            try:
+                days = int(text)
+                new_expiry = time.time() + (days * 86400)
+                if target_uid in users:
+                    users[target_uid]["vip"] = new_expiry
+                    save_data("users.json", users)
+                    try:
+                        await context.bot.send_message(chat_id=int(target_uid), text=f"🎉 Sizga admin tomonidan {days} kunga VIP status berildi! ✅")
+                    except: pass
+                    await update.message.reply_text(f"✅ Foydalanuvchiga {days} kunlik VIP status berildi!", reply_markup=ADMIN_KEYBOARD)
+            except:
+                await update.message.reply_text("❌ Faqat raqam (kun miqdorini) kiriting!", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_new_admin":
@@ -423,9 +488,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📢 Reklama postini yuboring:")
             return
 
-        elif text == "🔍 ID qidirish":
-            context.user_data["state"] = "waiting_for_search_id"
-            await update.message.reply_text("🔍 Kino kodini kiriting:")
+        elif text == "🔍 Foydalanuvchi qidirish":
+            context.user_data["state"] = "waiting_for_user_search"
+            await update.message.reply_text("🔍 Qidirilayotgan foydalanuvchining **ID raqami** yoki **username**'ini yuboring:", parse_mode="Markdown")
             return
 
     if not is_admin:
@@ -447,8 +512,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔍 Ko'rmoqchi bo'lgan kino yoki multfilmingiz kodini yuboring:")
         return
     elif text == "💎 VIP status":
-        is_vip = users.get(user_id_str, {}).get("vip", False)
-        status_text = "Sizda VIP status mavjud! ✅" if is_vip else "Sizda hozircha VIP status yo'q ❌"
+        vip_val = users.get(user_id_str, {}).get("vip", False)
+        status_text = "Sizda VIP status mavjud! ✅"
+        if isinstance(vip_val, (int, float)):
+            if vip_val > time.time():
+                rem_days = int((vip_val - time.time()) / 86400)
+                status_text = f"VIP status mavjud ✅ ({rem_days} kun qoldi)"
+            else:
+                status_text = "VIP muddati tugagan ❌"
+        elif vip_val is True:
+            status_text = "Sizda VIP status mavjud! ✅ (Doimiy)"
+        else:
+            status_text = "Sizda hozircha VIP status yo'q ❌"
+
         vip_text = f"{bot_texts['vip_tariffs']}\n\nHolatingiz: {status_text}\n\nQuyidagi tariflardan birini tanlang:"
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("1 oylik - 10,000 so'm", callback_data="vip_1")],
@@ -459,8 +535,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(vip_text, reply_markup=keyboard)
         return
     elif text == "👤 Profil":
-        is_vip = users.get(user_id_str, {}).get("vip", False)
-        await update.message.reply_text(f"👤 Profil:\n🆔 ID: {user_id}\n👤 Ism: {update.effective_user.full_name}\n💎 VIP: {'Ha ✅' if is_vip else 'Yo\'q ❌'}")
+        vip_val = users.get(user_id_str, {}).get("vip", False)
+        v_str = "Yo'q ❌"
+        if isinstance(vip_val, (int, float)) and vip_val > time.time():
+            rem_days = int((vip_val - time.time()) / 86400)
+            v_str = f"Ha ✅ ({rem_days} kun qoldi)"
+        elif vip_val is True:
+            v_str = "Ha ✅ (Doimiy)"
+        await update.message.reply_text(f"👤 Profil:\n🆔 ID: {user_id}\n👤 Ism: {update.effective_user.full_name}\n💎 VIP: {v_str}")
         return
     elif text == "📞 Aloqa":
         await update.message.reply_text("📞 Admin bilan bog'lanish uchun admin bilan aloqaga chiqing.")
@@ -538,15 +620,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text="🏠 Asosiy menyu:", reply_markup=USER_KEYBOARD)
         return
 
+    if is_admin and data.startswith("give_vip_days_"):
+        target_uid = data.replace("give_vip_days_", "")
+        context.user_data["target_vip_uid"] = target_uid
+        context.user_data["state"] = "waiting_for_vip_days"
+        await query.message.reply_text("⏳ Foydalanuvchiga necha kun VIP berish kerak? (Faqat raqam yozing, masalan: 30)")
+        return
+
+    if is_admin and data.startswith("remove_vip_"):
+        target_uid = data.replace("remove_vip_", "")
+        if target_uid in users:
+            users[target_uid]["vip"] = False
+            save_data("users.json", users)
+            await query.message.edit_text("✅ Foydalanuvchidan VIP status olib tashlandi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]]))
+        return
+
     if is_admin and (data.startswith("approve_vip_") or data.startswith("reject_vip_")):
         target_uid = data.split("_")[-1]
         action = data.split("_")[0]
         if action == "approve":
             if target_uid in users:
-                users[target_uid]["vip"] = True
+                users[target_uid]["vip"] = time.time() + (30 * 86400) # Chek orqali 30 kun beriladi
                 save_data("users.json", users)
             try:
-                await context.bot.send_message(chat_id=int(target_uid), text="🎉 Tabriklaymiz! VIP obunangiz tasdiqlandi! ✅", reply_markup=USER_KEYBOARD)
+                await context.bot.send_message(chat_id=int(target_uid), text="🎉 Tabriklaymiz! 1 oylik VIP obunangiz tasdiqlandi! ✅", reply_markup=USER_KEYBOARD)
             except: pass
             await query.message.edit_caption(caption=query.message.caption + "\n\n✅ HOLAT: Tasdiqlandi")
         else:

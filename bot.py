@@ -1,10 +1,27 @@
 import os
 import json
+from threading import Thread
+from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 TOKEN = "8970384329:AAHoM9qKeEAMVuiu6OX1tNxPDb714Zq9IG8"
 ADMIN_ID = 6682139161
+
+# --- Flask server (Render 24/7 ishlashi uchun) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running 24/7!"
+
+def run_web():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+# ----------------------------------------------------
 
 def load_data(filename, default):
     if os.path.exists(filename):
@@ -24,10 +41,7 @@ catalog = load_data("catalog.json", [])
 channels = load_data("channels.json", []) 
 admins = load_data("admins.json", [ADMIN_ID])
 
-vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": "-1003932364635"})
-if not vip_settings.get("channel_id"):
-    vip_settings["channel_id"] = "-1003932364635"
-    save_data("vip_settings.json", vip_settings)
+vip_settings = load_data("vip_settings.json", {"card": "8600 0000 0000 0000", "channel_id": ""})
 
 bot_texts = load_data("bot_texts.json", {
     "start": "🎬 Xush kelibsiz! Kino yoki multfilm kodini yuboring.",
@@ -50,12 +64,13 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📞 Aloqa")]
 ], resize_keyboard=True)
 
-async def check_telegram_subscription(bot, user_id, context=None):
+async def check_telegram_subscription(bot, user_id):
     if user_id == ADMIN_ID or user_id in admins:
         return True
-
-    if str(user_id) in users and users.get(str(user_id), {}).get("vip", False):
-        return True
+    str_uid = str(user_id)
+    if str_uid in users:
+        if users[str_uid].get("vip", False) or users[str_uid].get("bypass_sub", False):
+            return True
 
     tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
     if not tg_channels:
@@ -69,17 +84,14 @@ async def check_telegram_subscription(bot, user_id, context=None):
         try:
             chat_target = int(clean_ch) if clean_ch.startswith("-100") or clean_ch.lstrip("-").isdigit() else f"@{clean_ch}"
             member = await bot.get_chat_member(chat_id=chat_target, user_id=user_id)
-            # Agar foydalanuvchi tark etgan bo'kick qilingan bo'lsa
             if member.status in ["left", "kicked"]:
                 return False
         except Exception as e:
-            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}. Bot kanalga admin qilinganligiga ishonch hosil qiling!")
-            # Agar bot kanalga admin bo'lmasa xato beradi, shuning uchun xavfsizlik uchun False qaytaramiz
+            print(f"Obunani tekshirishda xatolik ({clean_ch}): {e}")
             return False
-            
     return True
 
-async def send_subscription_required(update_or_query, context, pending_code=None):
+async def send_subscription_required(update_or_query, pending_code=None):
     query = getattr(update_or_query, "callback_query", None)
     message = query.message if query else update_or_query.message
     
@@ -110,12 +122,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["state"] = None
     
     if user_id not in users:
-        users[user_id] = {"name": user.full_name, "vip": False, "referrals": []}
+        users[user_id] = {"name": user.full_name, "vip": False, "bypass_sub": False, "referrals": []}
         save_data("users.json", users)
 
     is_admin = (user.id in admins or user.id == ADMIN_ID)
-
     pending_code = None
+
     if context.args:
         arg = context.args[0].strip()
         if arg.startswith("ref_"):
@@ -128,9 +140,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pending_code = arg
 
     if not is_admin:
-        is_subbed = await check_telegram_subscription(context.bot, user.id, context)
+        is_subbed = await check_telegram_subscription(context.bot, user.id)
         if not is_subbed:
-            await send_subscription_required(update, context, pending_code=pending_code)
+            await send_subscription_required(update, pending_code=pending_code)
             return
 
     if is_admin:
@@ -153,7 +165,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
     
@@ -176,7 +189,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not exists:
                 channels.append({"url": clean_new_ch, "type": "tg"})
                 save_data("channels.json", channels)
-                await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {clean_new_ch}\n\n⚠️ ESLATMA: Bot obunani tekshira olishi uchun ushbu kanalga ADMINISTRATOR qilib qo'yilishi shart!", reply_markup=ADMIN_KEYBOARD)
+                await update.message.reply_text(f"✅ Kanal muvaffaqiyatli ulandi: {clean_new_ch}", reply_markup=ADMIN_KEYBOARD)
             else:
                 await update.message.reply_text("⚠️ Bu kanal allaqachon qo'shilgan!", reply_markup=ADMIN_KEYBOARD)
             return
@@ -237,14 +250,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             catalog.append(new_movie_item)
             save_data("catalog.json", catalog)
             
-            channel_target_raw = vip_settings.get("channel_id", "-1003932364635").strip()
+            channel_target_raw = str(vip_settings.get("channel_id", "")).strip()
             if channel_target_raw:
                 try:
                     bot_info = await context.bot.get_me()
                     bot_username = bot_info.username
                     
                     caption = f"🎬 {movie_title}\n📌 Kod: {new_code}\n\n🤖 Bizning bot: @{bot_username}\n👇 Ko'rish uchun quyidagi tugmani bosing:"
-                    
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("▶️ Ko'rish uchun bosing", url=f"https://t.me/{bot_username}?start={new_code}")]
                     ])
@@ -264,7 +276,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     print(f"Kanalga tashlashda xatolik: {e}")
 
             context.user_data["state"] = None
-            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va saqlandi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino muvaffaqiyatli qo'shildi va kanalga yuborildi!\n📌 Kod: {new_code}", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_ad":
@@ -326,13 +338,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ VIP matni yangilandi!", reply_markup=ADMIN_KEYBOARD)
             return
 
-        elif state == "waiting_for_search_id":
+        elif state == "waiting_for_user_id":
             context.user_data["state"] = None
-            found = next((item for item in catalog if str(item.get("code")).strip() == text.strip()), None)
-            if found:
-                await update.message.reply_video(video=found["file_id"], caption=f"🎬 {found['title']}\n📌 Kod: {found['code']}")
-            else:
-                await update.message.reply_text(bot_texts["not_found"])
+            target_id = text.strip()
+            if not target_id.isdigit():
+                await update.message.reply_text("❌ Noto'g'ri ID format! Faqat raqam kiriting.", reply_markup=ADMIN_KEYBOARD)
+                return
+            
+            if target_id not in users:
+                users[target_id] = {"name": "Foydalanuvchi", "vip": False, "bypass_sub": False, "referrals": []}
+                save_data("users.json", users)
+            
+            context.user_data["target_user_id"] = target_id
+            u_data = users[target_id]
+            is_u_admin = (int(target_id) in admins or int(target_id) == ADMIN_ID)
+            
+            info_msg = (
+                f"👤 Foydalanuvchi ma'lumotlari:\n"
+                f"🆔 ID: `{target_id}`\n"
+                f"👤 Ism: {u_data.get('name', 'Nomaʼlum')}\n"
+                f"💎 VIP status: {'Ha ✅' if u_data.get('vip') else 'Yoʻq ❌'}\n"
+                f"🚀 Majburiy obunadan ozod: {'Ha ✅' if u_data.get('bypass_sub') else 'Yoʻq ❌'}\n"
+                f"👮‍♂️ Admin: {'Ha ✅' if is_u_admin else 'Yoʻq ❌'}"
+            )
+            
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💎 VIP berish/olish", callback_data=f"adm_vip_{target_id}")],
+                [InlineKeyboardButton("🚀 Obunadan halos qilish", callback_data=f"adm_bypass_{target_id}")],
+                [InlineKeyboardButton("👮‍♂️ Adminlik berish/olish", callback_data=f"adm_admin_{target_id}")],
+                [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+            ])
+            await update.message.reply_text(info_msg, parse_mode="Markdown", reply_markup=kb)
+            return
+
+        elif state == "waiting_for_vip_days":
+            context.user_data["state"] = None
+            target_id = context.user_data.get("target_user_id")
+            try:
+                days = int(text)
+                if 1 <= days <= 30:
+                    if target_id in users:
+                        users[target_id]["vip"] = True
+                        save_data("users.json", users)
+                        await update.message.reply_text(f"✅ Foydalanuvchiga {days} kunga VIP status berildi!", reply_markup=ADMIN_KEYBOARD)
+                        try:
+                            await context.bot.send_message(chat_id=int(target_id), text=f"🎉 Tabriklaymiz! Sizga admin tomonidan {days} kunga VIP status berildi!")
+                        except:
+                            pass
+                else:
+                    await update.message.reply_text("❌ Faqat 1 dan 30 gacha bo'lgan sonni kiriting!", reply_markup=ADMIN_KEYBOARD)
+            except:
+                await update.message.reply_text("❌ Noto'g'ri format! Faqat raqam yuboring.", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_new_admin":
@@ -343,8 +399,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     admins.append(new_id)
                     save_data("admins.json", admins)
                     await update.message.reply_text("✅ Admin qo'shildi!", reply_markup=ADMIN_KEYBOARD)
+                else:
+                    await update.message.reply_text("⚠️ Bu foydalanuvchi allaqachon admin!", reply_markup=ADMIN_KEYBOARD)
             except:
-                await update.message.reply_text("❌ Xato ID.")
+                await update.message.reply_text("❌ Xato ID format! Faqat raqam kiriting.", reply_markup=ADMIN_KEYBOARD)
             return
 
         elif state == "waiting_for_vip_card":
@@ -358,7 +416,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["state"] = None
             vip_settings["channel_id"] = text.strip()
             save_data("vip_settings.json", vip_settings)
-            await update.message.reply_text(f"✅ Kinolar tashlanadigan kanal ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
+            await update.message.reply_text(f"✅ Kino kanali ulandi: {text}", reply_markup=ADMIN_KEYBOARD)
             return
 
     if is_admin:
@@ -388,10 +446,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
                 [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
                 [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
-                [InlineKeyboardButton("📢 Kino kanali", callback_data="set_post_channel")],
+                [InlineKeyboardButton("📢 Kino kanali ulash", callback_data="set_post_channel")],
+                [InlineKeyboardButton("🗑 Kino kanalini o'chirish", callback_data="remove_post_channel")],
                 [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
             ])
-            await update.message.reply_text("ℹ️ Bot matnlari va sozlamalari:", reply_markup=keyboard)
+            await update.message.reply_text(f"ℹ️ Bot sozlamalari:\n\n📢 Hozirgi ulangan kino kanali: `{vip_settings.get('channel_id', 'Kiritilmagan ❌')}`", reply_markup=keyboard, parse_mode="Markdown")
             return
 
         elif text == "👥 Foydalanuvchilar":
@@ -430,14 +489,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "🔍 ID qidirish":
-            context.user_data["state"] = "waiting_for_search_id"
-            await update.message.reply_text("🔍 Kino kodini kiriting:")
+            context.user_data["state"] = "waiting_for_user_id"
+            await update.message.reply_text("🔍 Boshqarish uchun foydalanuvchining Telegram ID raqamini kiriting:")
             return
 
     if not is_admin:
-        is_subbed = await check_telegram_subscription(context.bot, user_id, context)
+        is_subbed = await check_telegram_subscription(context.bot, user_id)
         if not is_subbed:
-            await send_subscription_required(update, context)
+            await send_subscription_required(update)
             return
 
     user_id_str = str(user_id)
@@ -466,29 +525,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif text == "👤 Profil":
         is_vip = users.get(user_id_str, {}).get("vip", False)
-        await update.message.reply_text(f"👤 Profil:\n🆔 ID: {user_id}\n👤 Ism: {update.effective_user.full_name}\n💎 VIP: {'Ha ✅' if is_vip else 'Yo\'q ❌'}")
+        await update.message.reply_text(f"👤 Profil:\n🆔 ID: {user_id}\n👤 Ism: {user.full_name}\n💎 VIP: {'Ha ✅' if is_vip else 'Yo\'q ❌'}")
         return
     elif text == "📞 Aloqa":
         await update.message.reply_text("📞 Admin bilan bog'lanish uchun: @proactive_11")
         return
 
-    if not is_admin and update.message.photo and state == "waiting_for_vip_check":
-        context.user_data["state"] = None
-        photo_file_id = update.message.photo[-1].file_id
-        admin_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"approve_vip_{user_id}"),
-             InlineKeyboardButton("❌ Rad etish", callback_data=f"reject_vip_{user_id}")]
-        ])
-        for adm in admins:
-            try:
-                await context.bot.send_photo(chat_id=adm, photo=photo_file_id, caption=f"📩 Yangi VIP to'lov cheki!\n\n👤 Foydalanuvchi: {update.effective_user.full_name}\n🆔 ID: {user_id}", reply_markup=admin_markup, parse_mode="Markdown")
-            except:
-                pass
-        await update.message.reply_text("✅ Chekingiz adminga yuborildi! Tez orada tekshirib tasdiqlashadi.")
-        return
-
     found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
-    
     if found_movie:
         await update.message.reply_video(
             video=found_movie["file_id"], 
@@ -506,7 +549,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = (user_id in admins or user_id == ADMIN_ID)
 
     if data.startswith("check_sub"):
-        if await check_telegram_subscription(context.bot, user_id, context):
+        if await check_telegram_subscription(context.bot, user_id):
             try: await query.message.delete()
             except: pass
             
@@ -523,16 +566,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                     return
 
-            await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi. Kino kodini yuborishingiz mumkin:", reply_markup=USER_KEYBOARD)
+            await context.bot.send_message(chat_id=user_id, text="✅ Rahmat! Obuna tasdiqlandi.", reply_markup=USER_KEYBOARD)
         else:
-            await query.answer("❌ Hali kanallarga obuna bo'lmagansiz yoki bot kanalga admin qilinmagan!", show_alert=True)
+            await query.answer("❌ Hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
         return
 
     if data.startswith("vip_"):
         card_num = vip_settings["card"]
-        msg = f"💳 To'lov qilish uchun karta raqam:\n`{card_num}`\n\n📌 Pulni o'tkazib, chek rasmini shu botga yuboring!"
+        msg = f"💳 To'lov qilish uchun karta raqam:\n`{card_num}`\n\n📌 Pulni o'tkazib, chek rasmini yuboring!"
         await query.message.edit_text(msg, parse_mode="Markdown")
-        context.user_data["state"] = "waiting_for_vip_check"
         return
 
     if data == "back_to_menu":
@@ -540,24 +582,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try: await query.message.delete()
         except: pass
         await context.bot.send_message(chat_id=user_id, text="🏠 Asosiy menyu:", reply_markup=USER_KEYBOARD)
-        return
-
-    if is_admin and (data.startswith("approve_vip_") or data.startswith("reject_vip_")):
-        target_uid = data.split("_")[-1]
-        action = data.split("_")[0]
-        if action == "approve":
-            if target_uid in users:
-                users[target_uid]["vip"] = True
-                save_data("users.json", users)
-            try:
-                await context.bot.send_message(chat_id=int(target_uid), text="🎉 Tabriklaymiz! VIP obunangiz tasdiqlandi! ✅", reply_markup=USER_KEYBOARD)
-            except: pass
-            await query.message.edit_caption(caption=query.message.caption + "\n\n✅ HOLAT: Tasdiqlandi")
-        else:
-            try:
-                await context.bot.send_message(chat_id=int(target_uid), text="❌ VIP to'lov chekingiz rad etildi.")
-            except: pass
-            await query.message.edit_caption(caption=query.message.caption + "\n\n❌ HOLAT: Rad etildi")
         return
 
     if not is_admin:
@@ -571,12 +595,59 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
             await context.bot.send_message(chat_id=user_id, text="👑 Admin paneli:", reply_markup=ADMIN_KEYBOARD)
 
+    elif data.startswith("adm_vip_"):
+        t_id = data.replace("adm_vip_", "")
+        context.user_data["target_user_id"] = t_id
+        context.user_data["state"] = "waiting_for_vip_days"
+        await query.message.edit_text("📅 Foydalanuvchiga necha kun VIP berish kerak? (1 dan 30 gacha raqam kiriting):")
+
+    elif data.startswith("adm_bypass_"):
+        t_id = data.replace("adm_bypass_", "")
+        if t_id in users:
+            current = users[t_id].get("bypass_sub", False)
+            users[t_id]["bypass_sub"] = not current
+            save_data("users.json", users)
+            status = "ozod qilindi ✅" if not current else "cheklov qo'yildi ❌"
+            await query.answer(f"Majburiy obunadan {status}", show_alert=True)
+            try: await query.message.delete()
+            except: pass
+            await context.bot.send_message(chat_id=user_id, text=f"✅ Foydalanuvchi majburiy obunadan {status}", reply_markup=ADMIN_KEYBOARD)
+
+    elif data.startswith("adm_admin_"):
+        t_id_int = int(data.replace("adm_admin_", ""))
+        if t_id_int == ADMIN_ID:
+            await query.answer("⚠️ Asosiy adminni o'chirib bo'lmaydi!", show_alert=True)
+            return
+        if t_id_int in admins:
+            admins.remove(t_id_int)
+            save_data("admins.json", admins)
+            await query.answer("👮‍♂️ Adminlik huquqi olib tashlandi!", show_alert=True)
+        else:
+            admins.append(t_id_int)
+            save_data("admins.json", admins)
+            await query.answer("👮‍♂️ Adminlik huquqi berildi!", show_alert=True)
+        try: await query.message.delete()
+        except: pass
+        await context.bot.send_message(chat_id=user_id, text="✅ Admin huquqlari yangilandi!", reply_markup=ADMIN_KEYBOARD)
+
     elif data == "bot_users_list":
-        await query.message.edit_text(f"👥 Bot foydalanuvchilari soni: {len(users)} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"👥 Bot foydalanuvchilari soni: {len(users)} ta", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
 
     elif data == "channel_users_list":
         tg_channels_count = sum(1 for c in channels if isinstance(c, dict) and c.get("type", "tg") == "tg")
-        await query.message.edit_text(f"📢 Majburiy obunadagi kanallar soni: {tg_channels_count} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"📢 Majburiy obunadagi kanallar soni: {tg_channels_count} ta", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+
+    elif data == "add_admin":
+        context.user_data["state"] = "waiting_for_new_admin"
+        await query.message.edit_text("👮‍♂️ Yangi adminning Telegram ID raqamini yuboring:")
+
+    elif data == "list_admins":
+        admin_list_str = "\n".join([f"🆔 `{a}`" for a in admins])
+        await query.message.edit_text(f"📋 Hozirgi adminlar ro'yxati:\n\n{admin_list_str}", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+
+    elif data == "change_vip_card":
+        context.user_data["state"] = "waiting_for_vip_card"
+        await query.message.edit_text("💳 Yangi karta raqamini kiriting:")
 
     elif data == "add_channel":
         context.user_data["state"] = "waiting_for_channel"
@@ -612,35 +683,50 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     url = ch.get("url", str(ch)) if isinstance(ch, dict) else str(ch)
                     keyboard.append([InlineKeyboardButton(f"❌ O'chirish: {url}", callback_data=f"del_ch_{index}")])
                 keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")])
-                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n🗑 O'chirmoqchi bo'lgan boshqa kanalni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n🗑 Boshqa kanalni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "list_channels":
         ch_list = "\n".join([f"{i+1}. {c.get('url', str(c))} ({c.get('type', 'tg')})" for i, c in enumerate(channels)]) if channels else "Hozircha yo'q."
-        await query.message.edit_text(f"📋 Ulangan kanallar va havolalar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"📋 Ulangan kanallar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
 
     elif data == "set_start_text":
         context.user_data["state"] = "set_start_text_input"
-        await query.message.edit_text("🎬 Yangi Start matnini yuboring:", parse_mode="Markdown")
+        await query.message.edit_text("🎬 Yangi Start matnini yuboring:")
 
     elif data == "set_sub_text":
         context.user_data["state"] = "set_sub_text_input"
-        await query.message.edit_text("📢 Yangi Obuna matnini yuboring:", parse_mode="Markdown")
+        await query.message.edit_text("📢 Yangi Obuna matnini yuboring:")
 
     elif data == "set_not_found_text":
         context.user_data["state"] = "set_not_found_text_input"
-        await query.message.edit_text("❌ Yangi Topilmadi matnini yuboring:", parse_mode="Markdown")
+        await query.message.edit_text("❌ Yangi Topilmadi matnini yuboring:")
 
     elif data == "set_vip_text":
         context.user_data["state"] = "set_vip_text_input"
-        await query.message.edit_text("💎 Yangi VIP tariflar matnini yuboring:", parse_mode="Markdown")
+        await query.message.edit_text("💎 Yangi VIP tariflar matnini yuboring:")
 
     elif data == "set_post_channel":
         context.user_data["state"] = "waiting_for_post_channel"
-        await query.message.edit_text("📢 Kinolar avtomatik tashlanadigan kanal username yoki ID sini kiriting (masalan: @kanal_username):", parse_mode="Markdown")
+        await query.message.edit_text("📢 Kino kanali username yoki ID sini kiriting (masalan: `@kanal` yoki `-100...`):")
+
+    elif data == "remove_post_channel":
+        vip_settings["channel_id"] = ""
+        save_data("vip_settings.json", vip_settings)
+        await query.answer("✅ Kino kanali o'chirildi!", show_alert=True)
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎬 Start matni", callback_data="set_start_text")],
+            [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
+            [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
+            [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
+            [InlineKeyboardButton("📢 Kino kanali ulash", callback_data="set_post_channel")],
+            [InlineKeyboardButton("🗑 Kino kanalini o'chirish", callback_data="remove_post_channel")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text(f"ℹ️ Bot sozlamalari:\n\n📢 Hozirgi ulangan kino kanali: `Kiritilmagan ❌`", reply_markup=keyboard, parse_mode="Markdown")
 
     elif data == "add_movie":
         context.user_data["state"] = "waiting_for_movie_file"
-        await query.message.edit_text("🎬 Kinoni yuboring:")
+        await query.message.edit_text("🎬 Kinoni video yoki fayl ko'rinishida yuboring:")
 
     elif data == "del_movie_menu":
         if not catalog:
@@ -656,29 +742,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("del_movie_"):
         movie_code = data.replace("del_movie_", "")
-        initial_len = len(catalog)
-        catalog[:] = [item for item in catalog if str(item.get("code")) != str(movie_code)]
-        if len(catalog) < initial_len:
-            save_data("catalog.json", catalog)
-            await query.message.edit_text("✅ Kino o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        catalog[:] = [item for item in catalog if str(item.get("code")) != movie_code]
+        save_data("catalog.json", catalog)
+        
+        if not catalog:
+            await query.message.edit_text("✅ Kino o'chirildi.\n\n❌ Kinolar qolmadi.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        else:
+            keyboard = []
+            for item in catalog:
+                c_code = item.get("code")
+                c_title = item.get("title")
+                keyboard.append([InlineKeyboardButton(f"🗑 {c_code} - {c_title}", callback_data=f"del_movie_{c_code}")])
+            keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")])
+            await query.message.edit_text(f"✅ Kino o'chirildi!\n\n🗑 Boshqasini tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "add_admin":
-        context.user_data["state"] = "waiting_for_new_admin"
-        await query.message.edit_text("👮‍♂️ Admin ID raqamini yuboring:")
+def main():
+    keep_alive()
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    elif data == "list_admins":
-        await query.message.edit_text(f"📋 Adminlar ID: {', '.join(map(str, admins))}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
-    elif data == "change_vip_card":
-        context.user_data["state"] = "waiting_for_vip_card"
-        await query.message.edit_text("💳 Yangi karta raqamini kiriting:")
+    print("Bot ishga tushdi...")
+    application.run_polling()
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, handle_message))
-
-    print("🤖 Bot muvaffaqiyatli ishga tushdi!")
-    app.run_polling()
+    main()

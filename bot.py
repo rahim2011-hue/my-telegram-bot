@@ -4,7 +4,7 @@ import time
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-TOKEN = "8970384329:AAF5QGTZ5CaxHyeGaVmBFJOjE2mhKV8ICGc"
+TOKEN = "8970384329:AAFUHeaADYnkkSr_mPoKtM0UFwsFAdfA-9w"
 ADMIN_ID = 6682139161
 
 def load_data(filename, default):

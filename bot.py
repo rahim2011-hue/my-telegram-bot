@@ -43,7 +43,6 @@ bot_texts = load_data("bot_texts.json", {
     "vip_tariffs": "💎 VIP obuna orqali barcha cheklovlarni olib tashlang!"
 })
 
-# Tugmalar tartibi siz xohlagandek va chiroyli chiqishi uchun moslandi
 ADMIN_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📊 Statistika"), KeyboardButton("🎬 Kino boshqaruvi")],
     [KeyboardButton("📢 Majburiy obuna"), KeyboardButton("🎁 Referal")],
@@ -117,6 +116,8 @@ async def send_subscription_required(update_or_query, context, pending_code=None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    if not user:
+        return
     user_id = str(user.id)
     context.user_data["state"] = None
     
@@ -174,6 +175,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(bot_texts["start"], reply_markup=USER_KEYBOARD)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user or not update.message:
+        return
     user_id = update.effective_user.id
     is_admin = (user_id in admins or user_id == ADMIN_ID)
     text = update.message.text.strip() if update.message.text else ""
@@ -499,7 +502,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "💎 VIP boshqaruv":
-            # VIP boshqaruv menyusiga yangi funksiyalar qo'shildi
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
                 [InlineKeyboardButton("💰 1 oylik narxini o'zgartirish", callback_data="change_price_1")],

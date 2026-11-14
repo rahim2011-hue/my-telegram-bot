@@ -1,10 +1,27 @@
 import os
 import json
 import time
+from flask import Flask
+import threading
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-TOKEN = "8970384329:AAFUHeaADYnkkSr_mPoKtM0UFwsFAdfA-9w"
+# --- RENDER 24/7 UCHUN VEB SERVER ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot muvaffaqiyatli ishlayapti!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = threading.Thread(target=run)
+    t.start()
+# ------------------------------------
+
+TOKEN = "8970384329:AAF5QGTZ5CaxHyeGaVmBFJOjE2mhKV8ICGc"
 ADMIN_ID = 6682139161
 
 def load_data(filename, default):
@@ -824,11 +841,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text("✅ Kino o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
+    keep_alive()  # Render port ochishi va 24/7 uxlab qolmasligi uchun
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, handle_message))
+    app_builder = ApplicationBuilder().token(TOKEN).build()
+    
+    app_builder.add_handler(CommandHandler("start", start))
+    app_builder.add_handler(CallbackQueryHandler(button_handler))
+    app_builder.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, handle_message))
 
     print("🤖 Bot muvaffaqiyatli ishga tushdi!")
-    app.run_polling()
+    app_builder.run_polling()

@@ -74,8 +74,6 @@ USER_KEYBOARD = ReplyKeyboardMarkup([
     [KeyboardButton("📞 Aloqa")]
 ], resize_keyboard=True)
 
-BACK_INLINE = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]])
-
 async def check_telegram_subscription(bot, user_id, context=None):
     if user_id == ADMIN_ID or user_id in admins:
         return True
@@ -88,7 +86,7 @@ async def check_telegram_subscription(bot, user_id, context=None):
         elif vip_data is True:
             return True
 
-    tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
+    tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg"] == "tg"]
     if not tg_channels:
         return True
 
@@ -213,6 +211,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
 
     if is_admin and state:
+        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data=context.user_data.get("back_cb", "back_to_admin"))]])
+
         if state == "waiting_for_channel":
             context.user_data["state"] = None
             clean_new_ch = text.strip()
@@ -227,7 +227,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == "waiting_for_movie_file":
             if not update.message.video and not update.message.document and not update.message.photo:
-                await update.message.reply_text("❌ Kinoni video yoki fayl ko'rinishida yuboring!", reply_markup=BACK_INLINE)
+                await update.message.reply_text("❌ Kinoni video yoki fayl ko'rinishida yuboring!", reply_markup=back_markup)
                 return
             
             if update.message.video:
@@ -239,12 +239,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             context.user_data["temp_movie_file_id"] = file_id
             context.user_data["state"] = "waiting_for_preview"
-            await update.message.reply_text("📹 Kanalga tashlash uchun qisqa video yoki rasm yuboring:", reply_markup=BACK_INLINE)
+            await update.message.reply_text("📹 Kanalga tashlash uchun qisqa video yoki rasm yuboring:", reply_markup=back_markup)
             return
 
         elif state == "waiting_for_preview":
             if not update.message.video and not update.message.photo and not update.message.document:
-                await update.message.reply_text("❌ Iltimos, qisqa video yoki rasm yuboring!", reply_markup=BACK_INLINE)
+                await update.message.reply_text("❌ Iltimos, qisqa video yoki rasm yuboring!", reply_markup=back_markup)
                 return
             
             if update.message.video:
@@ -260,7 +260,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["temp_preview_id"] = prev_id
             context.user_data["temp_preview_type"] = prev_type
             context.user_data["state"] = "waiting_for_movie_name"
-            await update.message.reply_text("✍️ Kinoning nomini yozing:", reply_markup=BACK_INLINE)
+            await update.message.reply_text("✍️ Kinoning nomini yozing:", reply_markup=back_markup)
             return
 
         elif state == "waiting_for_movie_name":
@@ -325,7 +325,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             confirm_markup = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ Ha, o'chirish", callback_data=f"del_yes_{code_to_del}"),
-                    InlineKeyboardButton("❌ Yo'q", callback_data="back_to_admin")
+                    InlineKeyboardButton("❌ Yo'q", callback_data="movies_menu")
                 ]
             ])
             await update.message.reply_text(
@@ -352,7 +352,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_social":
             context.user_data["state"] = "waiting_for_social_name"
             context.user_data["temp_social_url"] = text
-            await update.message.reply_text("🌐 Tarmoq nomini kiriting:", reply_markup=BACK_INLINE)
+            await update.message.reply_text("🌐 Tarmoq nomini kiriting:", reply_markup=back_markup)
             return
 
         elif state == "waiting_for_social_name":
@@ -578,12 +578,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif text == "📢 Reklama":
             context.user_data["state"] = "waiting_for_ad"
-            await update.message.reply_text("📢 Reklama postini yuboring:", reply_markup=BACK_INLINE)
+            context.user_data["back_cb"] = "back_to_admin"
+            await update.message.reply_text("📢 Reklama postini yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
             return
 
         elif text == "🔍 ID qidirish":
             context.user_data["state"] = "waiting_for_user_search"
-            await update.message.reply_text("🔍 Qidirilayotgan foydalanuvchining **ID raqami** yoki **username**'ini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+            context.user_data["back_cb"] = "back_to_admin"
+            await update.message.reply_text("🔍 Qidirilayotgan foydalanuvchining **ID raqami** yoki **username**'ini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
             return
 
     if not is_admin:
@@ -723,7 +725,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_uid = data.replace("give_vip_days_", "")
         context.user_data["target_vip_uid"] = target_uid
         context.user_data["state"] = "waiting_for_vip_days"
-        await query.message.reply_text("⏳ Foydalanuvchiga necha kun VIP berish kerak? (Faqat raqam yozing, masalan: 30)", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "back_to_admin"
+        await query.message.reply_text("⏳ Foydalanuvchiga necha kun VIP berish kerak? (Faqat raqam yozing, masalan: 30)", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
         return
 
     if is_admin and data.startswith("remove_vip_"):
@@ -759,9 +762,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_catalog[:] = [item for item in current_catalog if str(item.get("code")) != str(code_to_del)]
         if len(current_catalog) < initial_len:
             save_data("catalog.json", current_catalog)
-            await query.message.edit_text("✅ Kino muvaffaqiyatli o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]]))
+            await query.message.edit_text("✅ Kino muvaffaqiyatli o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
         else:
-            await query.message.edit_text("❌ Xatolik yuz berdi yoki kino topilmadi.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]]))
+            await query.message.edit_text("❌ Xatolik yuz berdi yoki kino topilmadi.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
         return
 
     if not is_admin:
@@ -775,83 +778,193 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
             await context.bot.send_message(chat_id=user_id, text="👑 Admin paneli:", reply_markup=ADMIN_KEYBOARD)
 
+    elif data == "movies_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Kino qo'shish", callback_data="add_movie")],
+            [InlineKeyboardButton("🗑 Kino o'chirish", callback_data="del_movie_menu")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text("🎬 Kino boshqaruvi:", reply_markup=keyboard)
+
+    elif data == "sub_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📌 Kanal ulash", callback_data="add_channel")],
+            [InlineKeyboardButton("🌐 Ijtimoiy link ulash", callback_data="add_social")],
+            [InlineKeyboardButton("🗑 Kanal o'chirish", callback_data="del_channel_menu")],
+            [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_channels")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text("📢 Majburiy obuna boshqaruvi:", reply_markup=keyboard)
+
+    elif data == "settings_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎬 Start matni", callback_data="set_start_text")],
+            [InlineKeyboardButton("📢 Obuna matni", callback_data="set_sub_text")],
+            [InlineKeyboardButton("❌ Topilmadi matni", callback_data="set_not_found_text")],
+            [InlineKeyboardButton("💎 VIP tariflar", callback_data="set_vip_text")],
+            [InlineKeyboardButton("📢 Kino kanali", callback_data="set_post_channel")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text("ℹ️ Bot sozlamalari:", reply_markup=keyboard)
+
+    elif data == "users_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Bot foydalanuvchilari", callback_data="bot_users_list")],
+            [InlineKeyboardButton("📢 Kanal foydalanuvchilari", callback_data="channel_users_list")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text("👥 Foydalanuvchilar:", reply_markup=keyboard)
+
+    elif data == "admins_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Admin qo'shish", callback_data="add_admin")],
+            [InlineKeyboardButton("📋 Ro'yxat", callback_data="list_admins")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        await query.message.edit_text("👮‍♂️ Adminlar menyusi:", reply_markup=keyboard)
+
+    elif data == "vip_menu":
+        context.user_data["state"] = None
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Karta o'zgartirish", callback_data="change_vip_card")],
+            [InlineKeyboardButton("💰 1 oylik narxini o'zgartirish", callback_data="change_price_1")],
+            [InlineKeyboardButton("💰 3 oylik narxini o'zgartirish", callback_data="change_price_3")],
+            [InlineKeyboardButton("💰 Doimiy narxini o'zgartirish", callback_data="change_price_life")],
+            [InlineKeyboardButton("🔙 Panel", callback_data="back_to_admin")]
+        ])
+        vip_info = (
+            f"💎 **VIP Boshqaruv paneli:**\n\n"
+            f"💳 Karta: `{vip_settings.get('card')}`\n"
+            f"💵 1 oylik: {vip_settings.get('price_1m')}\n"
+            f"💵 3 oylik: {vip_settings.get('price_3m')}\n"
+            f"💵 Doimiy: {vip_settings.get('price_life')}"
+        )
+        await query.message.edit_text(vip_info, parse_mode="Markdown", reply_markup=keyboard)
+
     elif data == "bot_users_list":
-        await query.message.edit_text(f"👥 Bot foydalanuvchilari soni: {len(users)} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"👥 Bot foydalanuvchilari soni: {len(users)} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="users_menu")]]))
 
     elif data == "channel_users_list":
         tg_channels_count = sum(1 for c in channels if isinstance(c, dict) and c.get("type", "tg") == "tg")
-        await query.message.edit_text(f"📢 Majburiy obunadagi kanallar soni: {tg_channels_count} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"📢 Majburiy obunadagi kanallar soni: {tg_channels_count} ta", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="users_menu")]]))
 
     elif data == "add_channel":
         context.user_data["state"] = "waiting_for_channel"
-        await query.message.edit_text("📌 Kanal username yoki havolasini kiriting:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "sub_menu"
+        await query.message.edit_text("📌 Kanal username yoki havolasini kiriting:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")]]))
 
     elif data == "add_social":
         context.user_data["state"] = "waiting_for_social"
-        await query.message.edit_text("🌐 Ijtimoiy tarmoq havolasini yuboring:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "sub_menu"
+        await query.message.edit_text("🌐 Ijtimoiy tarmoq havolasini yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")]]))
+
+    elif data == "del_channel_menu":
+        if not channels:
+            await query.message.edit_text("❌ Hozircha ulangan kanallar yo'q.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")]]))
+            return
+        keyboard = []
+        for index, ch in enumerate(channels):
+            url = ch.get("url", str(ch)) if isinstance(ch, dict) else str(ch)
+            keyboard.append([InlineKeyboardButton(f"❌ O'chirish: {url}", callback_data=f"del_ch_{index}")])
+        keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")])
+        await query.message.edit_text("🗑 O'chirmoqchi bo'lgan kanalni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("del_ch_"):
+        idx = int(data.split("_")[2])
+        if 0 <= idx < len(channels):
+            removed = channels.pop(idx)
+            save_data("channels.json", channels)
+            rem_url = removed.get("url", str(removed)) if isinstance(removed, dict) else str(removed)
+            
+            if not channels:
+                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n❌ Hozircha ulangan kanallar yo'q.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")]]))
+            else:
+                keyboard = []
+                for index, ch in enumerate(channels):
+                    url = ch.get("url", str(ch)) if isinstance(ch, dict) else str(ch)
+                    keyboard.append([InlineKeyboardButton(f"❌ O'chirish: {url}", callback_data=f"del_ch_{index}")])
+                keyboard.append([InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")])
+                await query.message.edit_text(f"✅ O'chirildi: {rem_url}\n\n🗑 Boshqa kanalni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "list_channels":
         if not channels:
             ch_list = "Hozircha ulangan kanallar yo'q."
         else:
             ch_list = "\n".join([f"{i+1}. {c.get('url', str(c))} ({c.get('type', 'tg')})" for i, c in enumerate(channels)])
-        await query.message.edit_text(f"📋 Ulangan kanallar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"📋 Ulangan kanallar:\n\n{ch_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="sub_menu")]]))
 
     elif data == "set_start_text":
         context.user_data["state"] = "set_start_text_input"
-        await query.message.edit_text("🎬 Yangi Start matnini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "settings_menu"
+        await query.message.edit_text("🎬 Yangi Start matnini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="settings_menu")]]))
 
     elif data == "set_sub_text":
         context.user_data["state"] = "set_sub_text_input"
-        await query.message.edit_text("📢 Yangi Obuna matnini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "settings_menu"
+        await query.message.edit_text("📢 Yangi Obuna matnini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="settings_menu")]]))
 
     elif data == "set_not_found_text":
         context.user_data["state"] = "set_not_found_text_input"
-        await query.message.edit_text("❌ Yangi Topilmadi matnini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "settings_menu"
+        await query.message.edit_text("❌ Yangi Topilmadi matnini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="settings_menu")]]))
 
     elif data == "set_vip_text":
         context.user_data["state"] = "set_vip_text_input"
-        await query.message.edit_text("💎 Yangi VIP tariflar matnini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "settings_menu"
+        await query.message.edit_text("💎 Yangi VIP tariflar matnini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="settings_menu")]]))
 
     elif data == "set_post_channel":
         context.user_data["state"] = "waiting_for_post_channel"
-        await query.message.edit_text("📢 Kinolar avtomatik tashlanadigan kanal username yoki ID sini kiriting:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "settings_menu"
+        await query.message.edit_text("📢 Kinolar avtomatik tashlanadigan kanal username yoki ID sini kiriting:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="settings_menu")]]))
 
     elif data == "change_vip_card":
         context.user_data["state"] = "waiting_for_vip_card"
-        await query.message.edit_text("💳 Yangi karta raqamini yuboring:", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "vip_menu"
+        await query.message.edit_text("💳 Yangi karta raqamini yuboring:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="vip_menu")]]))
 
     elif data == "change_price_1":
         context.user_data["state"] = "waiting_for_vip_price_1"
-        await query.message.edit_text("💰 1 oylik VIP uchun yangi narxni yuboring (masalan: 15,000 so'm):", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "vip_menu"
+        await query.message.edit_text("💰 1 oylik VIP uchun yangi narxni yuboring (masalan: 15,000 so'm):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="vip_menu")]]))
 
     elif data == "change_price_3":
         context.user_data["state"] = "waiting_for_vip_price_3"
-        await query.message.edit_text("💰 3 oylik VIP uchun yangi narxni yuboring:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "vip_menu"
+        await query.message.edit_text("💰 3 oylik VIP uchun yangi narxni yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="vip_menu")]]))
 
     elif data == "change_price_life":
         context.user_data["state"] = "waiting_for_vip_price_life"
-        await query.message.edit_text("💰 Doimiy VIP uchun yangi narxni yuboring:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "vip_menu"
+        await query.message.edit_text("💰 Doimiy VIP uchun yangi narxni yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="vip_menu")]]))
 
     elif data == "add_admin":
         context.user_data["state"] = "waiting_for_new_admin"
-        await query.message.edit_text("👮‍♂️ Yangi adminning Telegram ID raqamini yuboring:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "admins_menu"
+        await query.message.edit_text("👮‍♂️ Yangi adminning Telegram ID raqamini yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admins_menu")]]))
 
     elif data == "list_admins":
         admin_list = "\n".join([str(a) for a in admins])
-        await query.message.edit_text(f"👮‍♂️ Adminlar ro'yxati:\n\n{admin_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+        await query.message.edit_text(f"👮‍♂️ Adminlar ro'yxati:\n\n{admin_list}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admins_menu")]]))
 
     elif data == "add_movie":
         context.user_data["state"] = "waiting_for_movie_file"
-        await query.message.edit_text("🎬 Kinoni video yoki fayl ko'rinishida yuboring:", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "movies_menu"
+        await query.message.edit_text("🎬 Kinoni video yoki fayl ko'rinishida yuboring:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
 
     elif data == "del_movie_menu":
         current_catalog = load_data("catalog.json", [])
         if not current_catalog:
-            await query.message.edit_text("❌ Kinolar mavjud emas.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
+            await query.message.edit_text("❌ Kinolar mavjud emas.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
             return
         context.user_data["state"] = "waiting_for_movie_delete_code"
-        await query.message.edit_text("🗑 O'chirmoqchi bo'lgan **kino kodini** yuboring (masalan: `1`):", parse_mode="Markdown", reply_markup=BACK_INLINE)
+        context.user_data["back_cb"] = "movies_menu"
+        await query.message.edit_text("🗑 O'chirmoqchi bo'lgan **kino kodini** yuboring (masalan: `1`):", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
 
 if __name__ == "__main__":
     keep_alive()  # Render port ochishi va 24/7 uxlab qolmasligi uchun

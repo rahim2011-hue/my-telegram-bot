@@ -21,7 +21,7 @@ def keep_alive():
     t.start()
 # ------------------------------------
 
-TOKEN = "8970384329:AAF5QGTZ5CaxHyeGaVmBFJOjE2mhKV8ICGc"
+TOKEN = "8970384329:AAFUHeaADYnkkSr_mPoKtM0UFwsFAdfA-9w"
 ADMIN_ID = 6682139161
 
 def load_data(filename, default):
@@ -176,7 +176,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if pending_code:
-        found_movie = next((item for item in catalog if str(item.get("code")).strip() == pending_code), None)
+        current_catalog = load_data("catalog.json", [])
+        found_movie = next((item for item in current_catalog if str(item.get("code")).strip() == pending_code), None)
         if found_movie:
             file_id = found_movie.get("file_id") or found_movie.get("video_file_id")
             await update.message.reply_video(
@@ -262,7 +263,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif state == "waiting_for_movie_name":
             movie_title = text
-            new_code = str(len(catalog) + 1)
+            
+            # Eski kinolarni o'qib olamiz va yangisini qo'shamiz (O'chib ketishining oldi olingan)
+            current_catalog = load_data("catalog.json", [])
+            new_code = str(len(current_catalog) + 1)
+            
             file_id = context.user_data.get("temp_movie_file_id")
             prev_id = context.user_data.get("temp_preview_id")
             prev_type = context.user_data.get("temp_preview_type")
@@ -276,8 +281,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "preview_type": prev_type
             }
             
-            catalog.append(new_movie_item)
-            save_data("catalog.json", catalog)
+            current_catalog.append(new_movie_item)
+            save_data("catalog.json", current_catalog)
+            
+            global catalog
+            catalog = current_catalog
             
             channel_target_raw = vip_settings.get("channel_id", "-1003932364635").strip()
             if channel_target_raw:
@@ -537,7 +545,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         elif text == "📊 Statistika":
-            await update.message.reply_text(f"📊 Statistika:\n👥 Foydalanuvchilar: {len(users)}\n🎬 Kinolar: {len(catalog)}\n📢 Kanallar: {len(channels)}")
+            current_catalog = load_data("catalog.json", [])
+            await update.message.reply_text(f"📊 Statistika:\n👥 Foydalanuvchilar: {len(users)}\n🎬 Kinolar: {len(current_catalog)}\n📢 Kanallar: {len(channels)}")
             return
 
         elif text == "📢 Reklama":
@@ -624,7 +633,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Chekingiz adminga yuborildi!")
         return
 
-    found_movie = next((item for item in catalog if str(item.get("code")).strip().lower() == text.lower()), None)
+    current_catalog = load_data("catalog.json", [])
+    found_movie = next((item for item in current_catalog if str(item.get("code")).strip().lower() == text.lower()), None)
     
     if found_movie:
         f_id = found_movie.get("file_id") or found_movie.get("video_file_id")
@@ -651,7 +661,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts = data.split("_")
             if len(parts) > 2:
                 movie_code = parts[2]
-                found_movie = next((item for item in catalog if str(item.get("code")).strip() == movie_code), None)
+                current_catalog = load_data("catalog.json", [])
+                found_movie = next((item for item in current_catalog if str(item.get("code")).strip() == movie_code), None)
                 if found_movie:
                     f_id = found_movie.get("file_id") or found_movie.get("video_file_id")
                     await context.bot.send_video(
@@ -821,11 +832,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text("🎬 Kinoni yuboring:")
 
     elif data == "del_movie_menu":
-        if not catalog:
+        current_catalog = load_data("catalog.json", [])
+        if not current_catalog:
             await query.message.edit_text("❌ Kinolar mavjud emas.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
             return
         keyboard = []
-        for item in catalog:
+        for item in current_catalog:
             c_code = item.get("code")
             c_title = item.get("title")
             keyboard.append([InlineKeyboardButton(f"🗑 {c_code} - {c_title}", callback_data=f"del_movie_{c_code}")])
@@ -834,10 +846,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("del_movie_"):
         movie_code = data.replace("del_movie_", "")
-        initial_len = len(catalog)
-        catalog[:] = [item for item in catalog if str(item.get("code")) != str(movie_code)]
-        if len(catalog) < initial_len:
-            save_data("catalog.json", catalog)
+        current_catalog = load_data("catalog.json", [])
+        initial_len = len(current_catalog)
+        current_catalog[:] = [item for item in current_catalog if str(item.get("code")) != str(movie_code)]
+        if len(current_catalog) < initial_len:
+            save_data("catalog.json", current_catalog)
             await query.message.edit_text("✅ Kino o'chirildi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="back_to_admin")]]))
 
 if __name__ == "__main__":

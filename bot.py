@@ -86,7 +86,7 @@ async def check_telegram_subscription(bot, user_id, context=None):
         elif vip_data is True:
             return True
 
-    tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg"] == "tg"]
+    tg_channels = [ch for ch in channels if isinstance(ch, dict) and ch.get("type", "tg") == "tg"]
     if not tg_channels:
         return True
 
@@ -211,7 +211,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get("state")
 
     if is_admin and state:
-        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data=context.user_data.get("back_cb", "back_to_admin"))]])
+        back_cb = context.user_data.get("back_cb", "back_to_admin")
+        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data=back_cb)]])
 
         if state == "waiting_for_channel":
             context.user_data["state"] = None
@@ -319,7 +320,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             found_movie = next((item for item in current_catalog if str(item.get("code")) == code_to_del), None)
             
             if not found_movie:
-                await update.message.reply_text("❌ Bunday kodli kino topilmadi!", reply_markup=ADMIN_KEYBOARD)
+                await update.message.reply_text("❌ Bunday kodli kino topilmadi!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="movies_menu")]]))
                 return
             
             confirm_markup = InlineKeyboardMarkup([
